@@ -37,7 +37,20 @@ const createUser = async (userData) => {
 
     return result.rows[0];
 };
+const getUserByEmployeeId = async (employee_id) => {
 
+    const query = `
+        SELECT *
+        FROM users
+        WHERE employee_id = $1;
+    `;
+
+    const result = await pool.query(query, [employee_id]);
+
+    return result.rows[0];
+
+};
 module.exports = {
-    createUser
+    createUser,
+    getUserByEmployeeId
 };
