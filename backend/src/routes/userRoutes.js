@@ -8,16 +8,25 @@ const {
 } = require("../controllers/userController");
 
 const authenticate = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 
-router.post("/users", createUser);
+// Only System Administrator (role_id = 1) can create users
+router.post(
+    "/users",
+    authenticate,
+    authorizeRoles(1),
+    createUser
+);
+
+// Anyone can log in
 router.post("/login", loginUser);
-router.get("/profile", authenticate, (req, res) => {
 
+// Any logged-in user can view their own profile
+router.get("/profile", authenticate, (req, res) => {
     res.json({
         success: true,
         user: req.user
     });
-
 });
 
 module.exports = router;
