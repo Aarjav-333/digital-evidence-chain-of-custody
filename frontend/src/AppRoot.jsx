@@ -1203,232 +1203,164 @@ const fetchAuditLogs = async () => {
 
   const renderUploadPage = () => {
     return (
-      <>
-        <header className="dashboard-header">
+      <div className="dem-page-container">
+        {/* Page Header */}
+        <PageHeader
+          title="Upload Evidence"
+          subtitle="Add and cryptographically seal new digital evidence into the immutable ledger."
+          user={user}
+        />
 
-          <div>
-            <h1>Upload Evidence</h1>
-
-            <p>
-              Add new digital evidence to the system
-            </p>
-          </div>
-
-          <div className="user-info">
-
-            <strong>
-              {user?.full_name}
-            </strong>
-
-            <span>
-              {user?.employee_id}
-            </span>
-
-          </div>
-
-        </header>
-
-        <section className="dashboard-section">
-
-          <div className="section-header">
-
+        {/* Form Card */}
+        <Card>
+          <div className="dem-card-header">
             <div>
-              <h2>Evidence Information</h2>
-
-              <p>
-                Provide the details of the evidence
+              <h2 className="dem-section-title">Evidence Intake & Registration</h2>
+              <p className="dem-section-subtitle">
+                Provide file assets and case metadata. Cryptographic hashes are computed automatically upon intake.
               </p>
             </div>
-
           </div>
 
           <form
-            className="upload-form"
             onSubmit={handleUpload}
+            style={{ display: "flex", flexDirection: "column", gap: "20px" }}
           >
-
-            {/* CASE ID */}
-
-            <div className="form-group">
-
-        <label htmlFor="case_id">
-          Select Case
-        </label>
-
-        <select
-          id="case_id"
-          name="case_id"
-          value={uploadForm.case_id}
-          onChange={handleUploadChange}
-          required
-        >
-          <option value="">
-            {casesLoading
-              ? "Loading cases..."
-              : "Select a case"}
-          </option>
-
-          {cases.map((item) => (
-            <option
-              key={item.case_id}
-              value={item.case_id}
-            >
-              {item.case_number} — {item.case_title}
-            </option>
-          ))}
-        </select>
-            </div>
-
-            {/* EVIDENCE NAME */}
-
-            <div className="form-group">
-
-              <label htmlFor="evidence_name">
-                Evidence Name
-              </label>
-
-              <input
-                id="evidence_name"
-                name="evidence_name"
-                type="text"
-                placeholder="Enter evidence name"
-                value={uploadForm.evidence_name}
-                onChange={handleUploadChange}
-                required
-              />
-
-            </div>
-
-            {/* EVIDENCE TYPE */}
-
-            <div className="form-group">
-
-              <label htmlFor="evidence_type">
-                Evidence Type
-              </label>
-
-              <select
-                id="evidence_type"
-                name="evidence_type"
-                value={uploadForm.evidence_type}
-                onChange={handleUploadChange}
+            {/* 2-Column Field Grid */}
+            <div className="dem-form-grid-2">
+              <FormField
+                label="Select Case"
+                id="case_id"
                 required
               >
+                <select
+                  id="case_id"
+                  name="case_id"
+                  value={uploadForm.case_id}
+                  onChange={handleUploadChange}
+                  required
+                  className="dem-select"
+                >
+                  <option value="">
+                    {casesLoading ? "Loading cases..." : "-- Select an active case --"}
+                  </option>
+                  {cases.map((item) => (
+                    <option key={item.case_id} value={item.case_id}>
+                      {item.case_number} — {item.case_title}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-                <option value="">
-                  Select evidence type
-                </option>
+              <FormField
+                label="Evidence Name"
+                id="evidence_name"
+                required
+              >
+                <input
+                  id="evidence_name"
+                  name="evidence_name"
+                  type="text"
+                  placeholder="e.g. CCTV Surveillance Footage Reel 04"
+                  value={uploadForm.evidence_name}
+                  onChange={handleUploadChange}
+                  required
+                  className="dem-input"
+                />
+              </FormField>
 
-                <option value="Image">
-                  Image
-                </option>
+              <FormField
+                label="Evidence Type"
+                id="evidence_type"
+                required
+              >
+                <select
+                  id="evidence_type"
+                  name="evidence_type"
+                  value={uploadForm.evidence_type}
+                  onChange={handleUploadChange}
+                  required
+                  className="dem-select"
+                >
+                  <option value="">-- Select evidence type --</option>
+                  <option value="Image">Image</option>
+                  <option value="Video">Video</option>
+                  <option value="Audio">Audio</option>
+                  <option value="Document">Document</option>
+                  <option value="Other">Other / Binary</option>
+                </select>
+              </FormField>
 
-                <option value="Video">
-                  Video
-                </option>
-
-                <option value="Audio">
-                  Audio
-                </option>
-
-                <option value="Document">
-                  Document
-                </option>
-
-                <option value="Other">
-                  Other
-                </option>
-
-              </select>
-
+              <FormField
+                label="Evidence File"
+                id="evidenceFile"
+                required
+              >
+                <input
+                  id="evidenceFile"
+                  type="file"
+                  onChange={handleFileChange}
+                  required
+                  className="dem-input"
+                  style={{ paddingTop: "8px" }}
+                />
+                {selectedFile && (
+                  <div className="dem-file-selected-badge">
+                    <span>📄 {selectedFile.name}</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      ({(selectedFile.size / 1024).toFixed(1)} KB)
+                    </span>
+                  </div>
+                )}
+              </FormField>
             </div>
 
-            {/* DESCRIPTION */}
-
-            <div className="form-group">
-
-              <label htmlFor="description">
-                Description
-              </label>
-
+            {/* Description (Full Width) */}
+            <FormField
+              label="Description & Context"
+              id="description"
+            >
               <textarea
                 id="description"
                 name="description"
-                placeholder="Enter evidence description"
+                placeholder="Provide comprehensive forensic acquisition details, device serials, and chain of custody context..."
                 value={uploadForm.description}
                 onChange={handleUploadChange}
                 rows="4"
+                className="dem-textarea"
               />
+            </FormField>
 
-            </div>
-
-            {/* FILE */}
-
-            <div className="form-group">
-
-              <label htmlFor="evidenceFile">
-                Evidence File
-              </label>
-
-              <input
-                id="evidenceFile"
-                type="file"
-                onChange={handleFileChange}
-                required
-              />
-
-              {selectedFile && (
-                <p className="selected-file">
-                  Selected file:{" "}
-                  <strong>
-                    {selectedFile.name}
-                  </strong>
-                </p>
-              )}
-
-            </div>
-
-            {/* SECURITY INFO */}
-
-            <div className="upload-security-info">
-
-              <span>🔐</span>
-
-              <div>
-                <strong>
-                  Secure Upload
-                </strong>
-
-                <p>
-                  The file will be hashed using
-                  SHA-256 and encrypted using
-                  AES-256-GCM before storage.
+            {/* Security Callout */}
+            <div className="dem-security-callout">
+              <span className="dem-security-callout-icon">🔐</span>
+              <div className="dem-security-callout-content">
+                <h4 className="dem-security-callout-title">Cryptographic Integrity Seal</h4>
+                <p className="dem-security-callout-desc">
+                  This file will be automatically hashed using <strong>SHA-256</strong> to guarantee non-repudiation and encrypted using <strong>AES-256-GCM</strong> envelope encryption prior to persistent storage.
                 </p>
               </div>
-
             </div>
 
-            {/* MESSAGES */}
-
+            {/* Messages */}
             {uploadMessage && (
-              <div className="upload-success">
-                ✓ {uploadMessage}
+              <div className="dem-alert-banner dem-alert-success">
+                <span>✓</span>
+                <span>{uploadMessage}</span>
               </div>
             )}
 
             {uploadError && (
-              <div className="upload-error">
-                ✕ {uploadError}
+              <div className="dem-alert-banner dem-alert-error">
+                <span>✕</span>
+                <span>{uploadError}</span>
               </div>
             )}
 
-            {/* BUTTONS */}
-
-            <div className="upload-actions">
-
-              <button
-                type="button"
-                className="secondary-button"
+            {/* Actions Footer */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px", paddingTop: "16px", borderTop: "1px solid var(--border-subtle)" }}>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setCurrentPage("evidence");
                   setUploadMessage("");
@@ -1436,24 +1368,20 @@ const fetchAuditLogs = async () => {
                 }}
               >
                 Cancel
-              </button>
+              </Button>
 
-              <button
+              <Button
                 type="submit"
-                className="primary-button"
-                disabled={uploadLoading}
+                variant="primary"
+                icon="🔐"
+                loading={uploadLoading}
               >
-                {uploadLoading
-                  ? "Uploading..."
-                  : "🔐 Upload Evidence"}
-              </button>
-
+                {uploadLoading ? "Uploading & Encrypting..." : "Upload Evidence"}
+              </Button>
             </div>
-
           </form>
-
-        </section>
-      </>
+        </Card>
+      </div>
     );
   };
      // ============================================================
