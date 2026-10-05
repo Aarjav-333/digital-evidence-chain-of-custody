@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS evidence (
     encryption_auth_tag TEXT,
     uploaded_by INTEGER,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_legacy_seed BOOLEAN DEFAULT FALSE,
     CONSTRAINT fk_evidence_case FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE,
     CONSTRAINT fk_evidence_uploader FOREIGN KEY (uploaded_by) REFERENCES users(user_id) ON DELETE SET NULL
 );

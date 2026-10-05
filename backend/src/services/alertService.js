@@ -59,22 +59,23 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
         encrypted_aes_key,
         encryption_iv,
         encryption_auth_tag,
-        description
+        is_legacy_seed
     } = evidenceItem;
 
     const auditUserId = scanUserId || (await getSystemAdminId());
     const absolutePath = resolveEvidenceFilePath(file_path);
 
-    // Identify legacy/seed mock exhibits (e.g. records 1-3 from database seeding)
-    const isLegacySeedRecord = Boolean(
-        (evidence_id <= 3 && encrypted_aes_key === "temporary_key") ||
-        (description && description.includes("[LEGACY SEED"))
+    // Strictly verified legacy seed records: only if is_legacy_seed column is true
+    // or verified database initialization record (id <= 3 with temporary_key).
+    // NO description string matching exemption is permitted.
+    const isVerifiedLegacySeed = Boolean(
+        is_legacy_seed === true ||
+        (Number(evidence_id) <= 3 && encrypted_aes_key === "temporary_key")
     );
 
     if (!fs.existsSync(absolutePath)) {
-        // Legacy seed records never had physical files created on disk storage.
-        // We categorize them as LEGACY_SEED instead of creating permanent CRITICAL alerts.
-        if (isLegacySeedRecord) {
+        // Skip alert ONLY if this is a verified legacy seed catalog exhibit
+        if (isVerifiedLegacySeed) {
             return {
                 status: "LEGACY_SEED",
                 evidence_id,
@@ -85,6 +86,7 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
             };
         }
 
+        // All normal records with missing files MUST raise a CRITICAL alert
         const existing = await alertModel.findActiveAlert(evidence_id, "FILE_MISSING");
         let newAlertCreated = false;
         let emailDispatch = null;
@@ -263,7 +265,8 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
             file_hash,
             encrypted_aes_key,
             encryption_iv,
-            encryption_auth_tag
+            encryption_auth_tag,
+            is_legacy_seed
         FROM evidence
         ORDER BY evidence_id ASC;
     `;
