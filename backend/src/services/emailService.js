@@ -14,32 +14,52 @@ const isSmtpConfigured = () => {
 };
 
 let cachedTransporter = null;
+let cachedEtherealTransporter = null;
 
 /**
  * Creates or retrieves the cached Nodemailer transporter instance.
  */
-const getTransporter = () => {
-    if (!isSmtpConfigured()) {
-        return null;
-    }
-    if (!cachedTransporter) {
-        const port = parseInt(process.env.SMTP_PORT, 10) || 587;
-        const isSecure = port === 465;
+const getTransporter = async (forceEthereal = false) => {
+    if (isSmtpConfigured() && !forceEthereal) {
+        if (!cachedTransporter) {
+            const port = parseInt(process.env.SMTP_PORT, 10) || 587;
+            const isSecure = port === 465;
 
-        cachedTransporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST.trim(),
-            port: port,
-            secure: isSecure,
-            auth: {
-                user: process.env.SMTP_USER.trim(),
-                pass: process.env.SMTP_PASS.trim()
-            },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 15000
-        });
+            cachedTransporter = nodemailer.createTransport({
+                host: process.env.SMTP_HOST.trim(),
+                port: port,
+                secure: isSecure,
+                auth: {
+                    user: process.env.SMTP_USER.trim(),
+                    pass: process.env.SMTP_PASS.trim()
+                },
+                connectionTimeout: 10000,
+                greetingTimeout: 10000,
+                socketTimeout: 15000
+            });
+        }
+        return { transporter: cachedTransporter, isEthereal: false };
     }
-    return cachedTransporter;
+
+    if (process.env.ENABLE_ETHEREAL_DEMO === "true" || forceEthereal) {
+        if (!cachedEtherealTransporter) {
+            console.log("[EmailService] Initializing Ethereal demo mail transport for safe testing...");
+            const testAccount = await nodemailer.createTestAccount();
+            console.log(`[EmailService] Ethereal demo inbox created for: ${testAccount.user}`);
+            cachedEtherealTransporter = nodemailer.createTransport({
+                host: testAccount.smtp.host,
+                port: testAccount.smtp.port,
+                secure: testAccount.smtp.secure,
+                auth: {
+                    user: testAccount.user,
+                    pass: testAccount.pass
+                }
+            });
+        }
+        return { transporter: cachedEtherealTransporter, isEthereal: true };
+    }
+
+    return { transporter: null, isEthereal: false };
 };
 
 /**
@@ -78,23 +98,20 @@ const resolveRecipientEmail = async () => {
  * @param {Object} alertDetails Details of the newly created tamper alert
  * @returns {Promise<Object>} Status object with send result
  */
-const sendTamperAlertEmail = async (alertDetails) => {
+const sendTamperAlertEmail = async (alertDetails, options = {}) => {
     try {
-        if (!isSmtpConfigured()) {
+        const forceEthereal = Boolean(options.useEthereal);
+        const { transporter, isEthereal } = await getTransporter(forceEthereal);
+        if (!transporter) {
             console.log("[EmailService] SMTP email notifications are not configured.");
             return { sent: false, reason: "SMTP_NOT_CONFIGURED" };
         }
 
-        const recipient = await resolveRecipientEmail();
+        const resolved = await resolveRecipientEmail();
+        const recipient = resolved || (isEthereal ? "admin.sentinel@dig-evi.local" : null);
         if (!recipient) {
             console.warn("[EmailService] No recipient email address available for tamper alert. Set SYSTEM_ADMIN_EMAIL in .env or configure an active System Administrator email in the database.");
             return { sent: false, reason: "NO_RECIPIENT_EMAIL" };
-        }
-
-        const transporter = getTransporter();
-        if (!transporter) {
-            console.warn("[EmailService] Failed to initialize SMTP mail transporter.");
-            return { sent: false, reason: "TRANSPORTER_INIT_FAILED" };
         }
 
         const {
@@ -216,7 +233,7 @@ Sentinel Background Automated Integrity Monitor
 </html>
 `;
 
-        const fromAddress = process.env.SMTP_FROM || `"DIG_EVI Sentinel Alert" <${process.env.SMTP_USER}>`;
+        const fromAddress = process.env.SMTP_FROM || `"DIG_EVI Sentinel Alert" <${process.env.SMTP_USER || "sentinel@dig-evi.local"}>`;
 
         const sendResult = await transporter.sendMail({
             from: fromAddress,
@@ -226,11 +243,20 @@ Sentinel Background Automated Integrity Monitor
             html: htmlContent
         });
 
-        console.log(`[EmailService] Tamper alert notification successfully sent to ${recipient} (Message ID: ${sendResult.messageId})`);
+        const previewUrl = isEthereal ? nodemailer.getTestMessageUrl(sendResult) : null;
+        if (previewUrl) {
+            console.log(`[EmailService] >>> Ethereal demo email preview URL: ${previewUrl}`);
+        } else {
+            console.log(`[EmailService] Tamper alert notification successfully sent to ${recipient} (Message ID: ${sendResult.messageId})`);
+        }
+
         return {
             sent: true,
             messageId: sendResult.messageId,
-            recipient: recipient
+            recipient: recipient,
+            previewUrl: previewUrl,
+            subject: subject,
+            text: textContent
         };
     } catch (err) {
         console.error("[EmailService] Failed to send tamper alert email (non-fatal):", err.message);
@@ -245,19 +271,20 @@ Sentinel Background Automated Integrity Monitor
  * Helper to verify SMTP credentials and connectivity during manual testing.
  */
 const verifySmtpConnection = async () => {
-    if (!isSmtpConfigured()) {
+    const { transporter, isEthereal } = await getTransporter();
+    if (!transporter) {
         return {
             configured: false,
             message: "SMTP credentials are not configured in environment variables."
         };
     }
-    const transporter = getTransporter();
     try {
         await transporter.verify();
         return {
             configured: true,
             connected: true,
-            message: "SMTP connection verified successfully."
+            isEthereal: isEthereal,
+            message: isEthereal ? "Ethereal demo mail transporter active." : "SMTP connection verified successfully."
         };
     } catch (err) {
         return {

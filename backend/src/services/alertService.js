@@ -4,6 +4,7 @@ const path = require("path");
 const pool = require("../config/db");
 const alertModel = require("../models/alertModel");
 const auditService = require("./auditService");
+const emailService = require("./emailService");
 const { decryptAESKey } = require("../utils/encryption");
 
 const computeFileSha256 = (buffer) => {
@@ -66,8 +67,9 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
     if (!fs.existsSync(absolutePath)) {
         const existing = await alertModel.findActiveAlert(evidence_id, "FILE_MISSING");
         let newAlertCreated = false;
+        let emailDispatch = null;
         if (!existing) {
-            await alertModel.createAlert({
+            const createdAlert = await alertModel.createAlert({
                 evidence_id,
                 case_id,
                 alert_type: "FILE_MISSING",
@@ -85,13 +87,23 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                     `CRITICAL: Evidence file missing from storage: ${evidence_number}`
                 );
             }
+            try {
+                emailDispatch = await emailService.sendTamperAlertEmail({
+                    ...createdAlert,
+                    evidence_number,
+                    evidence_name: evidenceItem.evidence_name
+                });
+            } catch (emErr) {
+                console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
+            }
             newAlertCreated = true;
         }
         return {
             status: "FILE_MISSING",
             evidence_id,
             evidence_number,
-            new_alert_created: newAlertCreated
+            new_alert_created: newAlertCreated,
+            email_dispatch: emailDispatch
         };
     }
 
@@ -110,8 +122,9 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
             } catch (decErr) {
                 const existing = await alertModel.findActiveAlert(evidence_id, "CORRUPTED_CIPHERTEXT");
                 let newAlertCreated = false;
+                let emailDispatch = null;
                 if (!existing) {
-                    await alertModel.createAlert({
+                    const createdAlert = await alertModel.createAlert({
                         evidence_id,
                         case_id,
                         alert_type: "CORRUPTED_CIPHERTEXT",
@@ -129,13 +142,23 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                             `CRITICAL: Ciphertext corruption detected in evidence ${evidence_number}`
                         );
                     }
+                    try {
+                        emailDispatch = await emailService.sendTamperAlertEmail({
+                            ...createdAlert,
+                            evidence_number,
+                            evidence_name: evidenceItem.evidence_name
+                        });
+                    } catch (emErr) {
+                        console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
+                    }
                     newAlertCreated = true;
                 }
                 return {
                     status: "CORRUPTED_CIPHERTEXT",
                     evidence_id,
                     evidence_number,
-                    new_alert_created: newAlertCreated
+                    new_alert_created: newAlertCreated,
+                    email_dispatch: emailDispatch
                 };
             }
         }
@@ -144,8 +167,9 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
         if (calculatedHash !== file_hash) {
             const existing = await alertModel.findActiveAlert(evidence_id, "HASH_MISMATCH");
             let newAlertCreated = false;
+            let emailDispatch = null;
             if (!existing) {
-                await alertModel.createAlert({
+                const createdAlert = await alertModel.createAlert({
                     evidence_id,
                     case_id,
                     alert_type: "HASH_MISMATCH",
@@ -163,6 +187,15 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                         `CRITICAL: SHA-256 hash mismatch detected for evidence ${evidence_number}`
                     );
                 }
+                try {
+                    emailDispatch = await emailService.sendTamperAlertEmail({
+                        ...createdAlert,
+                        evidence_number,
+                        evidence_name: evidenceItem.evidence_name
+                    });
+                } catch (emErr) {
+                    console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
+                }
                 newAlertCreated = true;
             }
             return {
@@ -171,7 +204,8 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                 evidence_number,
                 calculatedHash,
                 storedHash: file_hash,
-                new_alert_created: newAlertCreated
+                new_alert_created: newAlertCreated,
+                email_dispatch: emailDispatch
             };
         }
 
