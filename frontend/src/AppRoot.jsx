@@ -1,6 +1,16 @@
 import AlertCenter from "./components/AlertCenter";
 import ForensicSuite from "./components/ForensicSuite";
 import { useState, useEffect } from "react";
+import {
+  PageHeader,
+  Card,
+  Badge,
+  Button,
+  FormField,
+  MetaItem,
+  EmptyState,
+  EvidenceCard
+} from "./components/common";
 import "./App.css";
 import "./layout.css";
 
@@ -1075,244 +1085,115 @@ const fetchAuditLogs = async () => {
     );
 
     return (
-      <>
-        <header className="dashboard-header">
-          <div>
-            <h1>Evidence Vault</h1>
-            <p>
-              Select an investigation case to view its digital evidence.
-            </p>
-          </div>
+      <div className="dem-page-container">
+        {/* Page Header */}
+        <PageHeader
+          title="Evidence Vault"
+          subtitle="Select an investigation case to view, verify, and decrypt cryptographic digital evidence."
+          user={user}
+        />
 
-          <div className="user-info">
-            <strong>{user?.full_name}</strong>
-            <span>{user?.employee_id}</span>
-          </div>
-        </header>
-
-        <section className="dashboard-section">
-          {/* CASE SELECTOR */}
-          <div className="evidence-case-selector">
-            <label htmlFor="evidence-case-select">
-              Select Investigation Case
-            </label>
-
+        {/* Case Selector Card */}
+        <Card>
+          <FormField
+            label="SELECT INVESTIGATION CASE"
+            id="evidence-case-select"
+          >
             <select
               id="evidence-case-select"
               value={selectedCaseId}
               onChange={(e) => setSelectedCaseId(e.target.value)}
               disabled={casesLoading}
+              className="dem-select"
             >
-              <option value="">Select a case</option>
-
+              <option value="">-- Choose an investigation case --</option>
               {cases.map((item) => (
-                <option
-                  key={item.case_id}
-                  value={item.case_id}
-                >
+                <option key={item.case_id} value={item.case_id}>
                   {item.case_number} — {item.case_title}
                 </option>
               ))}
             </select>
+          </FormField>
+        </Card>
+
+        {/* Selected Case Summary Card */}
+        {selectedCase && (
+          <div className="dem-case-summary-card">
+            <div className="dem-case-summary-left">
+              <span className="dem-case-summary-kicker">Active Case File</span>
+              <h2 className="dem-case-summary-id">{selectedCase.case_number}</h2>
+              <p className="dem-case-summary-title">{selectedCase.case_title}</p>
+            </div>
+            <div className="dem-case-summary-right">
+              <Badge variant="count" size="lg">
+                {caseEvidence.length} Evidence Record{caseEvidence.length !== 1 ? "s" : ""}
+              </Badge>
+            </div>
+          </div>
+        )}
+
+        {/* Evidence Section Header */}
+        <div className="dem-section-header">
+          <div>
+            <h2 className="dem-section-title">Evidence Records</h2>
+            <p className="dem-section-subtitle">
+              {caseEvidence.length} digital asset{caseEvidence.length !== 1 ? "s" : ""} registered in ledger
+            </p>
           </div>
 
-          {/* SELECTED CASE OVERVIEW */}
-          {selectedCase && (
-            <div className="evidence-case-overview">
-              <span>Selected Investigation</span>
-              <h2>{selectedCase.case_number}</h2>
-              <p>{selectedCase.case_title}</p>
-              <strong>
-                {caseEvidence.length} Evidence Records
-              </strong>
-            </div>
-          )}
+          <Button
+            variant="outline"
+            icon="↻"
+            onClick={fetchEvidence}
+            disabled={evidenceLoading}
+          >
+            {evidenceLoading ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
 
-          {/* EVIDENCE SECTION HEADER */}
-          <div className="evidence-list-header">
-            <div>
-              <h2>Evidence</h2>
-              <p>
-                {caseEvidence.length} evidence record{caseEvidence.length !== 1 ? "s" : ""}
-              </p>
+        {/* Evidence Loading State */}
+        {evidenceLoading && (
+          <Card>
+            <div style={{ textAlign: "center", padding: "32px", color: "var(--text-secondary)" }}>
+              <span className="dem-btn-spinner" style={{ display: "inline-block", marginBottom: "12px", width: "24px", height: "24px", borderColor: "rgba(139, 92, 246, 0.3)", borderTopColor: "var(--accent)" }} />
+              <div>Loading cryptographic evidence records...</div>
             </div>
+          </Card>
+        )}
 
-            <button
-              className="primary-button"
-              onClick={fetchEvidence}
-            >
-              ↻ Refresh
-            </button>
+        {/* Empty States */}
+        {!evidenceLoading && !selectedCaseId && (
+          <EmptyState
+            icon="📁"
+            title="No Case Selected"
+            message="Please select an investigation case from the dropdown above to view associated digital evidence."
+          />
+        )}
+
+        {!evidenceLoading && selectedCaseId && caseEvidence.length === 0 && (
+          <EmptyState
+            icon="📭"
+            title="No Evidence Records Found"
+            message="No digital evidence has been uploaded for this case file yet."
+          />
+        )}
+
+        {/* Evidence Cards Grid */}
+        {!evidenceLoading && selectedCaseId && caseEvidence.length > 0 && (
+          <div className="dem-evidence-grid">
+            {caseEvidence.map((item) => (
+              <EvidenceCard
+                key={item.evidence_id}
+                item={item}
+                verification={verificationResults[item.evidence_id]}
+                isVerifying={verifyingId === item.evidence_id}
+                onVerify={handleVerify}
+                onDecrypt={handleDecrypt}
+              />
+            ))}
           </div>
-
-          {evidenceLoading && (
-            <div className="evidence-page-message">
-              Loading evidence...
-            </div>
-          )}
-
-          {!evidenceLoading && !selectedCaseId && (
-            <div className="evidence-page-message">
-              Please select an investigation case to view evidence.
-            </div>
-          )}
-
-          {!evidenceLoading && selectedCaseId && caseEvidence.length === 0 && (
-            <div className="evidence-page-message">
-              No evidence found.
-            </div>
-          )}
-
-          {!evidenceLoading && selectedCaseId && caseEvidence.length > 0 && (
-            <div className="evidence-cards">
-              {caseEvidence.map((item) => {
-                const verification =
-                  verificationResults[
-                    item.evidence_id
-                  ];
-
-                return (
-                  <div
-                    className="evidence-card"
-                    key={item.evidence_id}
-                  >
-                    <div className="evidence-card-header">
-                      <div>
-                        <span className="evidence-number">
-                          {item.evidence_number}
-                        </span>
-
-                        <h3>
-                          {item.evidence_name}
-                        </h3>
-                      </div>
-
-                      <span className="evidence-type">
-                        {item.evidence_type}
-                      </span>
-                    </div>
-
-                    <div className="evidence-details">
-                      <div>
-                        <span>File</span>
-                        <strong>
-                          {item.file_name}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Uploaded By</span>
-                        <strong>
-                          User {item.uploaded_by}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Uploaded At</span>
-                        <strong>
-                          {new Date(
-                            item.uploaded_at
-                          ).toLocaleString()}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {item.description && (
-                      <div className="evidence-description">
-                        <span>
-                          Description
-                        </span>
-                        <p>
-                          {item.description}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="evidence-actions">
-                      <button
-                        className="verify-button"
-                        onClick={() =>
-                          handleVerify(
-                            item.evidence_id
-                          )
-                        }
-                        disabled={
-                          verifyingId ===
-                          item.evidence_id
-                        }
-                      >
-                        {verifyingId ===
-                        item.evidence_id
-                          ? "Verifying..."
-                          : "🛡 Verify Integrity"}
-                      </button>
-
-                      <button
-                        className="decrypt-button"
-                        onClick={() =>
-                          handleDecrypt(item.evidence_id)
-                        }
-                      >
-                        🔓 Decrypt Evidence
-                      </button>
-
-                      {verification && (
-                        <div
-                          className={`verification-result ${
-                            verification.integrity_status ===
-                            "VALID"
-                              ? "valid"
-                              : verification.integrity_status ===
-                                "TAMPERED"
-                              ? "tampered"
-                              : "error"
-                          }`}
-                        >
-                          <strong>
-                            {verification.integrity_status ===
-                            "VALID"
-                              ? "✓ VALID"
-                              : verification.integrity_status ===
-                                "TAMPERED"
-                              ? "⚠ TAMPERED"
-                              : "✕ ERROR"}
-                          </strong>
-
-                          {verification.integrity_status ===
-                            "VALID" && (
-                            <span>
-                              File integrity verified
-                              successfully.
-                            </span>
-                          )}
-
-                          {verification.integrity_status ===
-                            "TAMPERED" && (
-                            <span>
-                              Evidence may have been
-                              modified.
-                            </span>
-                          )}
-
-                          {verification.message &&
-                            verification.integrity_status ===
-                              "ERROR" && (
-                              <span>
-                                {
-                                  verification.message
-                                }
-                              </span>
-                            )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </>
+        )}
+      </div>
     );
   };
 

@@ -7,9 +7,9 @@ html, body {
   height: 100vh !important;
   max-height: 100vh !important;
   overflow: hidden !important;
-  background: #10131a !important;
-  color: white !important;
-  font-family: Arial, Helvetica, sans-serif !important;
+  background: #0F1117 !important;
+  color: #FFFFFF !important;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
 
 #root {
@@ -35,21 +35,21 @@ html, body {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: row !important;
-  background: #10131a !important;
-  color: white !important;
+  background: #0F1117 !important;
+  color: #FFFFFF !important;
   box-sizing: border-box !important;
 }
 
-/* SIDEBAR - PERMANENTLY FIXED & STATIONARY */
+/* SIDEBAR - PERMANENTLY FIXED & STATIONARY AT 260PX */
 .sidebar {
-  width: 250px !important;
-  min-width: 250px !important;
-  max-width: 250px !important;
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
   height: 100vh !important;
   max-height: 100vh !important;
-  padding: 16px 12px !important;
-  background: #181c25 !important;
-  border-right: 1px solid #2c3240 !important;
+  padding: 20px 14px !important;
+  background: #151822 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
   display: flex !important;
   flex-direction: column !important;
   flex-shrink: 0 !important;
@@ -63,78 +63,82 @@ html, body {
 .brand {
   display: flex !important;
   align-items: center !important;
-  gap: 10px !important;
-  padding: 2px 4px 14px !important;
+  gap: 12px !important;
+  padding: 2px 4px 18px !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 14px !important;
   flex-shrink: 0 !important;
 }
 
 .brand .logo-circle {
-  width: 36px !important;
-  height: 36px !important;
+  width: 38px !important;
+  height: 38px !important;
   margin: 0 !important;
-  font-size: 14px !important;
-  font-weight: bold !important;
-  border-radius: 50% !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  border-radius: 10px !important;
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
-  background: #6c4cff !important;
+  background: #8B5CF6 !important;
   color: white !important;
   flex-shrink: 0 !important;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.3) !important;
 }
 
 .brand h2 {
   margin: 0 !important;
-  font-size: 14px !important;
+  font-size: 14.5px !important;
   font-weight: 700 !important;
-  color: #f3f4f6 !important;
+  color: #F3F4F6 !important;
   line-height: 1.2 !important;
 }
 
 .brand span {
-  color: #6b7280 !important;
+  color: #8B90A0 !important;
   font-size: 11px !important;
+  display: block;
+  margin-top: 2px;
 }
 
 /* SIDEBAR NAVIGATION - SCROLLS INTERNALLY IF NEEDED */
 .sidebar nav {
   display: flex !important;
   flex-direction: column !important;
-  gap: 4px !important;
+  gap: 6px !important;
   flex: 1 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   padding-right: 2px !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 12px !important;
 }
 
 .sidebar nav::-webkit-scrollbar {
   width: 4px;
 }
 .sidebar nav::-webkit-scrollbar-thumb {
-  background: #2c3240;
+  background: #252A38;
   border-radius: 4px;
 }
 .sidebar nav::-webkit-scrollbar-thumb:hover {
-  background: #6c4cff;
+  background: #8B5CF6;
 }
 
 .nav-item {
   width: 100% !important;
-  padding: 8px 12px !important;
-  border: none !important;
-  border-radius: 6px !important;
+  padding: 10px 14px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
   background: transparent !important;
-  color: #9ca3af !important;
+  color: #9CA3AF !important;
   text-align: left !important;
-  font-size: 13px !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
   cursor: pointer !important;
   display: flex !important;
   align-items: center !important;
-  gap: 8px !important;
+  gap: 10px !important;
   transition: all 0.15s ease !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -143,13 +147,14 @@ html, body {
 }
 
 .nav-item:hover {
-  background: #232734 !important;
-  color: #f3f4f6 !important;
+  background: #1C202C !important;
+  color: #FFFFFF !important;
 }
 
 .nav-item.active {
-  background: #27213f !important;
-  color: white !important;
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.35) !important;
+  color: #FFFFFF !important;
   font-weight: 600 !important;
 }
 
@@ -157,11 +162,12 @@ html, body {
 .logout-button {
   flex-shrink: 0 !important;
   margin-top: auto !important;
-  padding: 10px 14px !important;
-  border: 1px solid #343b4a !important;
-  border-radius: 8px !important;
-  background: #11151d !important;
-  color: #9ca3af !important;
+  height: 44px !important;
+  padding: 0 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  background: #12151E !important;
+  color: #9CA3AF !important;
   cursor: pointer !important;
   font-size: 13.5px !important;
   font-weight: 600 !important;
@@ -169,13 +175,13 @@ html, body {
   align-items: center !important;
   justify-content: center !important;
   gap: 8px !important;
-  transition: all 0.2s ease !important;
+  transition: all 0.15s ease !important;
   box-sizing: border-box !important;
 }
 
 .logout-button:hover {
-  color: #f87171 !important;
-  border-color: #ef4444 !important;
+  color: #F87171 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
   background: rgba(239, 68, 68, 0.12) !important;
 }
 
@@ -184,22 +190,23 @@ html, body {
   flex: 1 !important;
   height: 100vh !important;
   max-height: 100vh !important;
-  padding: 24px 36px !important;
+  padding: 32px !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   box-sizing: border-box !important;
+  background: #0F1117 !important;
 }
 
 .dashboard-content::-webkit-scrollbar {
   width: 8px;
 }
 .dashboard-content::-webkit-scrollbar-track {
-  background: #10131a;
+  background: #0F1117;
 }
 .dashboard-content::-webkit-scrollbar-thumb {
-  background: #2c3240;
+  background: #252A38;
   border-radius: 4px;
 }
 .dashboard-content::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #3B4254;
 }
