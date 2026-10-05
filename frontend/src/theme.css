@@ -713,9 +713,10 @@ body {
 /* --- Evidence Vault Specific Card Styles --- */
 .dem-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 24px;
   width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 768px) {
@@ -893,6 +894,7 @@ body {
 .dem-evidence-footer .dem-btn {
   flex: 1 1 140px;
   min-width: 0;
+  max-width: 100%;
   height: 44px;
   padding: 0 16px;
   white-space: nowrap;
@@ -903,10 +905,18 @@ body {
   box-sizing: border-box;
 }
 
+.dem-evidence-footer .dem-btn .dem-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 @media (max-width: 400px) {
   .dem-evidence-footer .dem-btn {
     flex: 1 1 100%;
     width: 100%;
+    max-width: 100%;
   }
 }
 

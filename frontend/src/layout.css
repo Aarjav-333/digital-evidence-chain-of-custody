@@ -159,11 +159,34 @@ html, body {
 
 .nav-item.active,
 .dem-sidebar-item.active {
-  background: rgba(139, 92, 246, 0.12) !important;
-  border-color: rgba(139, 92, 246, 0.25) !important;
+  background: rgba(139, 92, 246, 0.16) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
   border-left: 3px solid #8B5CF6 !important;
   color: #FFFFFF !important;
   font-weight: 600 !important;
+}
+
+.dem-sidebar-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 18px !important;
+  height: 18px !important;
+  flex-shrink: 0 !important;
+  color: inherit !important;
+}
+
+.dem-sidebar-icon svg {
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+}
+
+.dem-sidebar-label {
+  flex: 1 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
 /* LOGOUT BUTTON - PINNED AT BOTTOM WITH SEPARATOR */

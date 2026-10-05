@@ -2010,11 +2010,11 @@ const renderCasesPage = () => {
 
   if (loggedIn) {
     return (
-      <div className="dashboard">
+      <div className="dashboard dem-dashboard-layout">
 
         {/* SIDEBAR */}
 
-        <aside className="sidebar">
+        <aside className="sidebar dem-sidebar">
 
           <div className="brand">
 
@@ -2131,7 +2131,7 @@ const renderCasesPage = () => {
 
         {/* MAIN CONTENT */}
 
-        <main className="dashboard-content">
+        <main className="dashboard-content dem-main-content">
 
           {currentPage === "dashboard" &&
           renderDashboard()}

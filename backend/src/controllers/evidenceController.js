@@ -17,7 +17,7 @@ const createEvidence = async (req, res) => {
         // Generate SHA-256 hash of original unencrypted evidence
         const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-        const encryptedDirectory = path.join("uploads", "encrypted");
+        const encryptedDirectory = path.resolve(__dirname, "../../uploads/encrypted");
         if (!fs.existsSync(encryptedDirectory)) {
             fs.mkdirSync(encryptedDirectory, { recursive: true });
         }
