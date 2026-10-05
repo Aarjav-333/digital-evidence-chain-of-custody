@@ -105,7 +105,7 @@ html, body {
 .sidebar nav {
   display: flex !important;
   flex-direction: column !important;
-  gap: 6px !important;
+  gap: 4px !important;
   flex: 1 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
@@ -125,11 +125,14 @@ html, body {
   background: #8B5CF6;
 }
 
-.nav-item {
+.nav-item,
+.dem-sidebar-item {
   width: 100% !important;
-  padding: 10px 14px !important;
+  height: 44px !important;
+  padding: 0 16px !important;
   border: 1px solid transparent !important;
-  border-radius: 10px !important;
+  border-left: 3px solid transparent !important;
+  border-radius: 12px !important;
   background: transparent !important;
   color: #9CA3AF !important;
   text-align: left !important;
@@ -138,32 +141,38 @@ html, body {
   cursor: pointer !important;
   display: flex !important;
   align-items: center !important;
-  gap: 10px !important;
+  gap: 12px !important;
   transition: all 0.15s ease !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  text-decoration: none !important;
 }
 
-.nav-item:hover {
-  background: #1C202C !important;
+.nav-item:hover,
+.dem-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
   color: #FFFFFF !important;
 }
 
-.nav-item.active {
-  background: rgba(139, 92, 246, 0.15) !important;
-  border-color: rgba(139, 92, 246, 0.35) !important;
+.nav-item.active,
+.dem-sidebar-item.active {
+  background: rgba(139, 92, 246, 0.12) !important;
+  border-color: rgba(139, 92, 246, 0.25) !important;
+  border-left: 3px solid #8B5CF6 !important;
   color: #FFFFFF !important;
   font-weight: 600 !important;
 }
 
-/* LOGOUT BUTTON - PERMANENTLY VISIBLE AT BOTTOM BEFORE ANY SCROLLING */
-.logout-button {
+/* LOGOUT BUTTON - PINNED AT BOTTOM WITH SEPARATOR */
+.logout-button,
+.dem-sidebar-logout-btn {
   flex-shrink: 0 !important;
   margin-top: auto !important;
   height: 44px !important;
-  padding: 0 14px !important;
+  padding: 0 16px !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 12px !important;
   background: #12151E !important;
@@ -174,12 +183,13 @@ html, body {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 8px !important;
+  gap: 10px !important;
   transition: all 0.15s ease !important;
   box-sizing: border-box !important;
 }
 
-.logout-button:hover {
+.logout-button:hover,
+.dem-sidebar-logout-btn:hover {
   color: #F87171 !important;
   border-color: rgba(239, 68, 68, 0.4) !important;
   background: rgba(239, 68, 68, 0.12) !important;

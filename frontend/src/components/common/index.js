@@ -6,3 +6,5 @@ export { default as FormField } from "./FormField";
 export { default as MetaItem } from "./MetaItem";
 export { default as EmptyState } from "./EmptyState";
 export { default as EvidenceCard } from "./EvidenceCard";
+export { default as SidebarItem } from "./SidebarItem";
+export * from "./Icons";

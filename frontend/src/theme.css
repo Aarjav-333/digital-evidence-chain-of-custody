@@ -220,6 +220,11 @@ body {
   border-radius: var(--radius-lg);
   padding: var(--card-padding);
   box-sizing: border-box;
+  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   position: relative;
 }
@@ -231,19 +236,27 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-width: 0;
+  width: 100%;
 }
 
 .dem-card-body {
   width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .dem-card-footer {
   padding-top: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: auto;
   border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
 }
 
 .dem-card-divider {
@@ -251,6 +264,7 @@ body {
   background: var(--border-subtle);
   margin: var(--space-2) 0;
   width: 100%;
+  flex-shrink: 0;
 }
 
 /* --- Section Header Row --- */
@@ -609,6 +623,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  width: 100%;
 }
 
 .dem-meta-label {
@@ -619,6 +635,7 @@ body {
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-label);
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .dem-meta-value {
@@ -627,12 +644,30 @@ body {
   font-weight: var(--weight-value);
   color: var(--color-value);
   line-height: var(--line-height-value);
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
+.dem-meta-file,
 .dem-mono {
   font-family: var(--font-mono);
-  font-size: 13.5px;
+  font-size: 13px;
   color: #CBD5E1;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.dem-meta-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  word-break: break-word;
+  min-width: 0;
 }
 
 .dem-truncate {
@@ -678,21 +713,25 @@ body {
 /* --- Evidence Vault Specific Card Styles --- */
 .dem-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: var(--section-gap);
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 24px;
   width: 100%;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .dem-evidence-grid {
     grid-template-columns: 1fr;
   }
 }
 
 .dem-evidence-card {
+  box-sizing: border-box;
+  padding: 24px;
+  overflow: hidden;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  height: 100%;
   transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -707,6 +746,8 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .dem-evidence-id-badge {
@@ -718,6 +759,7 @@ body {
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(139, 92, 246, 0.25);
+  white-space: nowrap;
 }
 
 .dem-evidence-title {
@@ -725,29 +767,46 @@ body {
   font-weight: var(--weight-section);
   color: var(--text-primary);
   margin: 0;
-  line-height: 1.35;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   word-break: break-word;
+  min-width: 0;
+}
+
+/* Single-column metadata stack with 16px between items */
+.dem-metadata-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
 }
 
 .dem-metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px 16px;
-  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
 }
 
 .dem-meta-desc-span {
-  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .dem-verify-box {
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   font-size: 12.5px;
-  margin-top: 6px;
+  margin: 8px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dem-verify-valid {
@@ -772,6 +831,7 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
 }
 
 .dem-verify-tag {
@@ -782,6 +842,8 @@ body {
 .dem-verify-msg {
   color: #E2E8F0;
   line-height: 1.4;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .dem-verify-hashes {
@@ -790,12 +852,14 @@ body {
   gap: 4px;
   padding-top: 6px;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  min-width: 0;
 }
 
 .dem-hash-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .dem-hash-label {
@@ -811,20 +875,39 @@ body {
   padding: 4px 6px;
   border-radius: 4px;
   word-break: break-all;
+  overflow-wrap: anywhere;
   color: #CBD5E1;
 }
 
 .dem-evidence-footer {
   display: flex;
-  align-items: center;
   gap: 12px;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .dem-evidence-footer .dem-btn {
-  flex: 1;
+  flex: 1 1 140px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 16px;
+  white-space: nowrap;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 400px) {
+  .dem-evidence-footer .dem-btn {
+    flex: 1 1 100%;
+    width: 100%;
+  }
 }
 
 /* Case Overview Card inside Vault */
@@ -1289,6 +1372,128 @@ body {
   max-height: 90vh;
   overflow-y: auto;
 }
+
+/* ==========================================================================
+   SIDEBAR COMPONENT STYLES
+   ========================================================================== */
+.dem-sidebar-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 14px 16px 6px;
+  margin: 0;
+  user-select: none;
+}
+
+.dem-sidebar-heading:first-of-type {
+  padding-top: 4px;
+}
+
+.dem-sidebar-item {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  gap: 12px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+.dem-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.dem-sidebar-item.active {
+  background: var(--accent-subtle);
+  border-color: rgba(139, 92, 246, 0.25);
+  border-left: 3px solid var(--accent);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.dem-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.dem-sidebar-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dem-sidebar-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.dem-sidebar-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 10px 14px;
+}
+
+/* Logout button pinned to bottom with separator above */
+.dem-sidebar-logout-container {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.dem-sidebar-logout-btn {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  background: #12151E;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.dem-sidebar-logout-btn:hover {
+  color: #F87171;
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+}
+
 
 
 

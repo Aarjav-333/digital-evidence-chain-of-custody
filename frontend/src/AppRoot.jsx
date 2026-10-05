@@ -9,7 +9,18 @@ import {
   FormField,
   MetaItem,
   EmptyState,
-  EvidenceCard
+  EvidenceCard,
+  SidebarItem,
+  DashboardIcon,
+  VaultIcon,
+  UploadIcon,
+  CasesIcon,
+  CustodyIcon,
+  AuditIcon,
+  ReportsIcon,
+  AlertsIcon,
+  ForensicIcon,
+  LogoutIcon
 } from "./components/common";
 import "./App.css";
 import "./layout.css";
@@ -1973,149 +1984,99 @@ const renderCasesPage = () => {
           </div>
 
           <nav>
+            <div className="dem-sidebar-heading">Main</div>
             {user?.role_id === 4 ? (
-              /* FORENSIC ANALYST NAVIGATION */
-              <>
-                <button
-                  className={`nav-item ${currentPage === "forensic" || currentPage === "reports" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("forensic")}
-                  style={{ color: "#c084fc", fontWeight: "bold" }}
-                >
-                  🔬 Forensic Suite
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "evidence" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("evidence")}
-                >
-                  Evidence Vault
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "cases" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("cases")}
-                >
-                  Cases
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "custody" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("custody")}
-                >
-                  Chain of Custody
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "audit" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("audit")}
-                >
-                  Audit Logs
-                </button>
-              </>
-            ) : user?.role_id === 1 ? (
-              /* SYSTEM ADMINISTRATOR NAVIGATION */
-              <>
-                <button
-                  className={`nav-item ${currentPage === "dashboard" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("dashboard")}
-                >
-                  Dashboard
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "alerts" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("alerts")}
-                  style={{ color: "#f87171", fontWeight: "bold" }}
-                >
-                  ⚠️ Tamper Alerts
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "reports" || currentPage === "forensic" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("reports")}
-                >
-                  📑 Forensic Reports & Autopsies
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "evidence" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("evidence")}
-                >
-                  Evidence Vault
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "upload" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("upload")}
-                >
-                  Upload Evidence
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "cases" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("cases")}
-                >
-                  Cases
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "custody" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("custody")}
-                >
-                  Chain of Custody
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "audit" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("audit")}
-                >
-                  Audit Logs
-                </button>
-              </>
+              <SidebarItem
+                icon={<ForensicIcon />}
+                label="Forensic Suite"
+                active={currentPage === "forensic" || currentPage === "reports"}
+                onClick={() => setCurrentPage("forensic")}
+              />
             ) : (
-              /* POLICE OFFICER / CASE MANAGER NAVIGATION */
+              <SidebarItem
+                icon={<DashboardIcon />}
+                label="Dashboard"
+                active={currentPage === "dashboard"}
+                onClick={() => setCurrentPage("dashboard")}
+              />
+            )}
+
+            <SidebarItem
+              icon={<VaultIcon />}
+              label="Evidence Vault"
+              active={currentPage === "evidence"}
+              onClick={() => setCurrentPage("evidence")}
+            />
+
+            {user?.role_id !== 4 && (
+              <SidebarItem
+                icon={<UploadIcon />}
+                label="Upload Evidence"
+                active={currentPage === "upload"}
+                onClick={() => setCurrentPage("upload")}
+              />
+            )}
+
+            <SidebarItem
+              icon={<CasesIcon />}
+              label="Cases"
+              active={currentPage === "cases"}
+              onClick={() => setCurrentPage("cases")}
+            />
+
+            <div className="dem-sidebar-heading">Compliance</div>
+
+            <SidebarItem
+              icon={<CustodyIcon />}
+              label="Chain of Custody"
+              active={currentPage === "custody"}
+              onClick={() => setCurrentPage("custody")}
+            />
+
+            <SidebarItem
+              icon={<AuditIcon />}
+              label="Audit Logs"
+              active={currentPage === "audit"}
+              onClick={() => setCurrentPage("audit")}
+            />
+
+            {user?.role_id === 1 && (
               <>
-                <button
-                  className={`nav-item ${currentPage === "dashboard" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("dashboard")}
-                >
-                  Dashboard
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "evidence" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("evidence")}
-                >
-                  Evidence Vault
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "upload" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("upload")}
-                >
-                  Upload Evidence
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "cases" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("cases")}
-                >
-                  Cases
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "custody" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("custody")}
-                >
-                  Chain of Custody
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "audit" ? "active" : ""}`}
-                  onClick={() => setCurrentPage("audit")}
-                >
-                  Audit Logs
-                </button>
-                <button
-                  className={`nav-item ${currentPage === "reports" || currentPage === "forensic" ? "active" : ""}`}
+                <SidebarItem
+                  icon={<ReportsIcon />}
+                  label="Forensic Reports"
+                  active={currentPage === "reports" || currentPage === "forensic"}
                   onClick={() => setCurrentPage("reports")}
-                >
-                  📑 Forensic Reports
-                </button>
+                />
+                <SidebarItem
+                  icon={<AlertsIcon />}
+                  label="Tamper Alerts"
+                  active={currentPage === "alerts"}
+                  onClick={() => setCurrentPage("alerts")}
+                />
               </>
+            )}
+
+            {(user?.role_id === 2 || user?.role_id === 3) && (
+              <SidebarItem
+                icon={<ReportsIcon />}
+                label="Forensic Reports"
+                active={currentPage === "reports" || currentPage === "forensic"}
+                onClick={() => setCurrentPage("reports")}
+              />
             )}
           </nav>
 
-          <button
-            className="logout-button"
-            onClick={handleLogout}
-          >
-            Logout
-          </button>
+          <div className="dem-sidebar-logout-container">
+            <button
+              type="button"
+              className="dem-sidebar-logout-btn"
+              onClick={handleLogout}
+            >
+              <LogoutIcon />
+              <span>Logout</span>
+            </button>
+          </div>
 
         </aside>
 
@@ -2231,10 +2192,10 @@ const renderCasesPage = () => {
             <button
               type="button"
               className="preset-btn"
-              onClick={() => handleQuickLogin("POL2026002", "Admin@123")}
+              onClick={() => handleQuickLogin("admin", "Admin@123")}
             >
               <span className="preset-title">🛡️ System Admin</span>
-              <span className="preset-desc">POL2026002 / Admin@123</span>
+              <span className="preset-desc">admin / Admin@123</span>
             </button>
 
             <button

@@ -22,7 +22,7 @@ export default function EvidenceCard({
 
   return (
     <Card className="dem-evidence-card">
-      {/* Top Row: Evidence ID on left and type badge on right */}
+      {/* (a) Header Row: Evidence ID badge on left, type badge on right */}
       <div className="dem-evidence-top-row">
         <span className="dem-evidence-id-badge">{item.evidence_number}</span>
         <Badge variant={getTypeVariant(item.evidence_type)}>
@@ -30,21 +30,24 @@ export default function EvidenceCard({
         </Badge>
       </div>
 
-      {/* Title as 18px bold heading */}
-      <h3 className="dem-evidence-title">{item.evidence_name}</h3>
+      {/* (b) Title: 18px / 600, clamped to 2 lines */}
+      <h3 className="dem-evidence-title" title={item.evidence_name}>
+        {item.evidence_name}
+      </h3>
+
+      {/* (c) Divider */}
       <div className="dem-card-divider" />
 
-      {/* Metadata 2-column grid of label/value pairs */}
-      <div className="dem-metadata-grid">
+      {/* (d) Metadata Block: Single-column stack, 16px between items */}
+      <div className="dem-metadata-stack">
         <MetaItem
           label="FILE"
           value={item.file_name}
-          isMono
-          truncate
+          isFile
         />
         <MetaItem
           label="UPLOADED BY"
-          value={`User ${item.uploaded_by}`}
+          value={item.uploader_name || `User ${item.uploaded_by}`}
         />
         <MetaItem
           label="UPLOADED AT"
@@ -53,7 +56,7 @@ export default function EvidenceCard({
         <MetaItem
           label="DESCRIPTION"
           value={item.description || "No description provided."}
-          className="dem-meta-desc-span"
+          isDescription
         />
       </div>
 
@@ -105,7 +108,10 @@ export default function EvidenceCard({
         </div>
       )}
 
-      {/* Footer Row with 16px gap above */}
+      {/* (e) Divider */}
+      <div className="dem-card-divider" />
+
+      {/* (f) Footer with Actions */}
       <div className="dem-evidence-footer">
         <Button
           variant="outline"

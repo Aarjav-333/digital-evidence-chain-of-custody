@@ -432,6 +432,7 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 ## 9. Changelog
 
 - **2026-10-05**:
+  - Fixed Evidence Vault card overflow and restructured components: resolved button horizontal overflow via `flex-wrap: wrap` and flexible widths (`flex: 1 1 140px`), switched metadata to a single-column stack with `min-width: 0` and `overflow-wrap: anywhere; word-break: break-all;` to wrap long filenames without clipping, enforced `min-width: 0` across card children, clamped titles to 2 lines and descriptions to 3 lines, equalized card heights with aligned bottom footers via `margin-top: auto`, and standardized the sidebar with uniform 18px SVG icons, 44px items, left accent bars, and Main/Compliance section groupings.
   - Resolved `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string` authentication error by adding robust absolute path resolution for `dotenv.config()` in `backend/src/server.js` and `backend/src/config/db.js`, ensuring `.env` variables are always reliably loaded into `process.env` regardless of command execution working directory.
   - Updated frontend System Administrator Quick Demo login button in `frontend/src/AppRoot.jsx` to accurately display and dispatch `POL2026002 / Admin@123`.
   - Created `PROJECT_CONTEXT.md` capturing complete codebase architecture, API specifications, DB schema, security mechanisms, and remaining tasks.
