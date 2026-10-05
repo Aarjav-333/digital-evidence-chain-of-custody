@@ -40,7 +40,12 @@ const createCase = async (caseData, createdBy) => {
     };
 
 };
+const getAllCases = async () => {
 
+    return await caseModel.getAllCases();
+
+};
 module.exports = {
-    createCase
+    createCase,
+    getAllCases
 };

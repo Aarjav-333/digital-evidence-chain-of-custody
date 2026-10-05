@@ -3,26 +3,24 @@ const express = require("express");
 const router = express.Router();
 
 const {
-    createCase,
-    getAllCases
-} = require("../controllers/caseController");
+    createCustodyLog,
+    getCustodyLogs
+} = require("../controllers/custodyController");
 
 const authenticate = require("../middleware/authMiddleware");
 
 
-// CREATE CASE
 router.post(
-    "/cases",
+    "/custody",
     authenticate,
-    createCase
+    createCustodyLog
 );
 
 
-// GET ALL CASES
 router.get(
-    "/cases",
+    "/custody/:evidenceId",
     authenticate,
-    getAllCases
+    getCustodyLogs
 );
 
 

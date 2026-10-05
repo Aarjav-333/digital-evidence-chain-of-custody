@@ -1,10 +1,10 @@
 const express = require("express");
-
 const router = express.Router();
 
 const {
     createUser,
-    loginUser
+    loginUser,
+    getAllUsers
 } = require("../controllers/userController");
 
 const authenticate = require("../middleware/authMiddleware");
@@ -17,6 +17,9 @@ router.post(
     authorizeRoles(1),
     createUser
 );
+
+// Authenticated users can list system users (for custody and report dispatch recipients)
+router.get("/users", authenticate, getAllUsers);
 
 // Anyone can log in
 router.post("/login", loginUser);

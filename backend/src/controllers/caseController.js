@@ -16,6 +16,7 @@ const createCase = async (req, res) => {
     } catch (error) {
 
         console.error(error);
+
         res.status(500).json({
             success: false,
             message: error.message
@@ -25,6 +26,34 @@ const createCase = async (req, res) => {
 
 };
 
+
+// GET ALL CASES
+const getAllCases = async (req, res) => {
+
+    try {
+
+        const result = await caseService.getAllCases();
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+
+    }
+
+};
+
+
 module.exports = {
-    createCase
+    createCase,
+    getAllCases
 };

@@ -15,6 +15,7 @@ const getLatestCaseNumber = async () => {
 
 };
 
+
 const createCase = async (caseData) => {
 
     const query = `
@@ -47,7 +48,33 @@ const createCase = async (caseData) => {
 
 };
 
+
+// GET ALL CASES
+const getAllCases = async () => {
+
+    const query = `
+        SELECT
+            case_id,
+            case_number,
+            case_title,
+            case_description,
+            investigating_officer,
+            created_by,
+            status,
+            created_at
+        FROM cases
+        ORDER BY case_id DESC;
+    `;
+
+    const result = await pool.query(query);
+
+    return result.rows;
+
+};
+
+
 module.exports = {
     getLatestCaseNumber,
-    createCase
+    createCase,
+    getAllCases
 };

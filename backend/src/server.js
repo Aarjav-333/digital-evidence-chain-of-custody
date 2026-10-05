@@ -1,26 +1,10 @@
 const app = require("./app");
-const pool = require("./config/db");
+const { startIntegrityMonitor } = require("./services/integrityScheduler");
+require("dotenv").config();
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-async function startServer() {
-
-    try {
-
-        await pool.query("SELECT NOW()");
-
-        console.log("✅ PostgreSQL Connected");
-
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on http://localhost:${PORT}`);
-        });
-
-    } catch (err) {
-
-        console.error(err);
-
-    }
-
-}
-
-startServer();
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    startIntegrityMonitor(60000);
+});
