@@ -2231,10 +2231,10 @@ const renderCasesPage = () => {
             <button
               type="button"
               className="preset-btn"
-              onClick={() => handleQuickLogin("admin", "Admin@123")}
+              onClick={() => handleQuickLogin("POL2026002", "Admin@123")}
             >
               <span className="preset-title">🛡️ System Admin</span>
-              <span className="preset-desc">admin / Admin@123</span>
+              <span className="preset-desc">POL2026002 / Admin@123</span>
             </button>
 
             <button

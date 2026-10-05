@@ -432,6 +432,8 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 ## 9. Changelog
 
 - **2026-10-05**:
+  - Resolved `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string` authentication error by adding robust absolute path resolution for `dotenv.config()` in `backend/src/server.js` and `backend/src/config/db.js`, ensuring `.env` variables are always reliably loaded into `process.env` regardless of command execution working directory.
+  - Updated frontend System Administrator Quick Demo login button in `frontend/src/AppRoot.jsx` to accurately display and dispatch `POL2026002 / Admin@123`.
   - Created `PROJECT_CONTEXT.md` capturing complete codebase architecture, API specifications, DB schema, security mechanisms, and remaining tasks.
   - Established workspace rule `.agent/rules/project_context.md` for continuous context synchronization.
   - Completed comprehensive UI redesign across all 7 primary pages (`Evidence Vault`, `Upload Evidence`, `Cases`, `Dashboard`, `Chain of Custody`, `Audit Logs`, `Forensic Reports`) adopting the unified dark theme card design system (`theme.css`, `layout.css`).
