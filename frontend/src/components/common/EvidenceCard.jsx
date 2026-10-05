@@ -8,6 +8,7 @@ export default function EvidenceCard({
   item,
   verification,
   isVerifying,
+  isDecrypting = false,
   onVerify,
   onDecrypt
 }) {
@@ -20,14 +21,27 @@ export default function EvidenceCard({
     return "default";
   };
 
+  const isLegacy = item.is_encrypted === false;
+
   return (
     <Card className="dem-evidence-card">
       {/* (a) Header Row: Evidence ID badge on left, type badge on right */}
       <div className="dem-evidence-top-row">
         <span className="dem-evidence-id-badge">{item.evidence_number}</span>
-        <Badge variant={getTypeVariant(item.evidence_type)}>
-          {item.evidence_type || "Document"}
-        </Badge>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {isLegacy ? (
+            <Badge variant="warning" size="sm" title="Uploaded prior to cryptographic envelope encryption">
+              Legacy
+            </Badge>
+          ) : (
+            <Badge variant="purple" size="sm" title="Cryptographically sealed with AES-256-GCM">
+              Encrypted
+            </Badge>
+          )}
+          <Badge variant={getTypeVariant(item.evidence_type)}>
+            {item.evidence_type || "Document"}
+          </Badge>
+        </div>
       </div>
 
       {/* (b) Title: 18px / 600, clamped to 2 lines */}
@@ -117,6 +131,7 @@ export default function EvidenceCard({
           variant="outline"
           icon="🛡️"
           loading={isVerifying}
+          disabled={isVerifying || isDecrypting}
           onClick={() => onVerify(item.evidence_id)}
         >
           {isVerifying ? "Verifying..." : "Verify Integrity"}
@@ -124,10 +139,13 @@ export default function EvidenceCard({
 
         <Button
           variant="primary"
-          icon="🔒"
+          icon={isLegacy ? "📥" : "🔒"}
+          loading={isDecrypting}
+          disabled={isDecrypting || isVerifying}
           onClick={() => onDecrypt(item.evidence_id)}
+          title={isLegacy ? "Download unencrypted legacy evidence" : "Decrypt AES-256-GCM encrypted evidence"}
         >
-          Decrypt Evidence
+          {isDecrypting ? "Processing..." : isLegacy ? "Download (Legacy)" : "Decrypt Evidence"}
         </Button>
       </div>
     </Card>

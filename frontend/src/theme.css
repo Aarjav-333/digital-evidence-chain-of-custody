@@ -910,6 +910,74 @@ body {
   }
 }
 
+/* Vault Alert & Notification Banner */
+.dem-vault-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.4;
+  animation: demFadeIn 0.2s ease;
+  box-sizing: border-box;
+}
+
+.dem-vault-notice-success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34D399;
+}
+
+.dem-vault-notice-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #F87171;
+}
+
+.dem-vault-notice-info {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60A5FA;
+}
+
+.dem-vault-notice-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dem-vault-notice-icon {
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.dem-vault-notice-text {
+  word-break: break-word;
+  color: #F1F5F9;
+}
+
+.dem-vault-notice-close {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color var(--transition-fast);
+}
+
+.dem-vault-notice-close:hover {
+  color: #FFFFFF;
+}
+
 /* Case Overview Card inside Vault */
 .dem-case-summary-card {
   display: flex;

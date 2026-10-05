@@ -76,7 +76,7 @@ const decryptEvidence = async (req, res) => {
     try {
         const evidenceId = req.params.evidenceId;
         if (!req.user || !req.user.user_id) {
-            return res.status(401).json({ success: false, message: "Authentication required" });
+            return res.status(401).json({ success: false, error: "AUTH_REQUIRED", message: "Authentication required" });
         }
         const userId = req.user.user_id;
 
@@ -86,6 +86,9 @@ const decryptEvidence = async (req, res) => {
         const safeFilename = encodeURIComponent(result.downloadFileName);
         res.setHeader("Content-Disposition", `attachment; filename="${result.downloadFileName}"; filename*=UTF-8''${safeFilename}`);
         res.setHeader("Content-Type", "application/octet-stream");
+        if (result.isLegacy) {
+            res.setHeader("X-Evidence-Legacy", "true");
+        }
 
         const cleanupTempFile = () => {
             if (tempPathToClean && fs.existsSync(tempPathToClean)) {
@@ -106,7 +109,7 @@ const decryptEvidence = async (req, res) => {
         fileStream.on("error", (streamErr) => {
             cleanupTempFile();
             if (!res.headersSent) {
-                res.status(500).json({ success: false, message: streamErr.message });
+                res.status(500).json({ success: false, error: "STREAM_ERROR", message: streamErr.message });
             }
         });
 
@@ -115,8 +118,13 @@ const decryptEvidence = async (req, res) => {
         if (tempPathToClean && fs.existsSync(tempPathToClean)) {
             try { fs.unlinkSync(tempPathToClean); } catch (_) {}
         }
-        console.error("Decrypt evidence error:", error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error("Decrypt evidence error:", error.message);
+        const statusCode = error.status || 500;
+        res.status(statusCode).json({
+            success: false,
+            error: error.code || "DECRYPTION_ERROR",
+            message: error.message || "Failed to decrypt evidence."
+        });
     }
 };
 

@@ -92,7 +92,15 @@ const getAllEvidence = async () => {
             e.file_name,
             e.file_hash,
             e.uploaded_by,
-            e.uploaded_at
+            e.uploaded_at,
+            CASE
+                WHEN e.encryption_iv IS NOT NULL 
+                 AND e.encryption_auth_tag IS NOT NULL 
+                 AND e.encrypted_aes_key IS NOT NULL 
+                 AND e.encrypted_aes_key LIKE '%:%:%' 
+                THEN true
+                ELSE false
+            END AS is_encrypted
         FROM evidence e
         LEFT JOIN cases c
             ON e.case_id = c.case_id

@@ -78,6 +78,8 @@ const [selectedCaseId, setSelectedCaseId] = useState("");
 
 const [verificationResults, setVerificationResults] = useState({});
   const [verifyingId, setVerifyingId] = useState(null);
+  const [decryptingId, setDecryptingId] = useState(null);
+  const [vaultNotice, setVaultNotice] = useState(null);
 
   // =========================
   // UPLOAD STATE
@@ -377,9 +379,15 @@ useEffect(() => {
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        alert("You must be logged in to decrypt evidence.");
+        setVaultNotice({
+          type: "error",
+          message: "You must be authenticated with valid role credentials to decrypt or access evidence."
+        });
         return;
       }
+
+      setDecryptingId(evidenceId);
+      setVaultNotice(null);
 
       const response = await fetch(
         `http://localhost:3000/api/evidence/${evidenceId}/decrypt`,
@@ -392,12 +400,15 @@ useEffect(() => {
       );
 
       if (!response.ok) {
-        let errMessage = "Failed to decrypt evidence";
+        let errMessage = "Failed to decrypt evidence.";
         try {
           const errData = await response.json();
           if (errData && errData.message) errMessage = errData.message;
         } catch (_) {}
-        alert(errMessage);
+        setVaultNotice({
+          type: "error",
+          message: errMessage
+        });
         return;
       }
 
@@ -411,6 +422,8 @@ useEffect(() => {
         }
       }
 
+      const isLegacy = response.headers.get("X-Evidence-Legacy") === "true";
+
       const blob = await response.blob();
       const objectUrl = window.URL.createObjectURL(blob);
       const downloadLink = document.createElement("a");
@@ -421,10 +434,25 @@ useEffect(() => {
       document.body.removeChild(downloadLink);
       window.URL.revokeObjectURL(objectUrl);
 
-      alert(`Evidence decrypted and securely downloaded: ${filename}\n\nNo plaintext copy remains stored on the server.`);
+      if (isLegacy) {
+        setVaultNotice({
+          type: "info",
+          message: `Legacy unencrypted file downloaded: ${filename} (record registered prior to encryption enforcement).`
+        });
+      } else {
+        setVaultNotice({
+          type: "success",
+          message: `Evidence decrypted and securely downloaded: ${filename}. No plaintext copy remains stored on server.`
+        });
+      }
     } catch (error) {
       console.error("Decryption download error:", error);
-      alert("Failed to decrypt and download evidence: " + error.message);
+      setVaultNotice({
+        type: "error",
+        message: "Failed to decrypt and download evidence: " + error.message
+      });
+    } finally {
+      setDecryptingId(null);
     }
   };
 
@@ -1134,6 +1162,26 @@ const fetchAuditLogs = async () => {
           </Button>
         </div>
 
+        {/* Vault Status & Decryption Notification */}
+        {vaultNotice && (
+          <div className={`dem-vault-notice dem-vault-notice-${vaultNotice.type}`}>
+            <div className="dem-vault-notice-content">
+              <span className="dem-vault-notice-icon">
+                {vaultNotice.type === "success" ? "✓" : vaultNotice.type === "error" ? "⚠" : "ℹ"}
+              </span>
+              <span className="dem-vault-notice-text">{vaultNotice.message}</span>
+            </div>
+            <button
+              type="button"
+              className="dem-vault-notice-close"
+              onClick={() => setVaultNotice(null)}
+              aria-label="Dismiss notice"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Evidence Loading State */}
         {evidenceLoading && (
           <Card>
@@ -1170,6 +1218,7 @@ const fetchAuditLogs = async () => {
                 item={item}
                 verification={verificationResults[item.evidence_id]}
                 isVerifying={verifyingId === item.evidence_id}
+                isDecrypting={decryptingId === item.evidence_id}
                 onVerify={handleVerify}
                 onDecrypt={handleDecrypt}
               />
