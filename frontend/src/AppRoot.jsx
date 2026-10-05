@@ -831,242 +831,214 @@ const fetchAuditLogs = async () => {
     ).length;
 
     return (
-      <>
-        <header className="dashboard-header">
+      <div className="dem-page-container">
+        {/* Page Header */}
+        <PageHeader
+          title="Security Operations Dashboard"
+          subtitle={`Welcome back, ${user?.full_name || "Investigator"}. Cryptographic custody and tamper telemetry are active.`}
+          user={user}
+        />
 
-          <div>
-            <h1>Dashboard</h1>
-
-            <p>
-              Welcome back, {user?.full_name}
-            </p>
+        {/* KPI STATISTICS GRID */}
+        <div className="dem-kpi-grid">
+          <div className="dem-kpi-card">
+            <div className="dem-kpi-top">
+              <span className="dem-kpi-label">Total Evidence</span>
+              <span className="dem-kpi-icon">📦</span>
+            </div>
+            <div className="dem-kpi-val">{evidence.length}</div>
+            <div className="dem-kpi-desc">Registered cryptographic files</div>
           </div>
 
-          <div className="user-info">
-
-            <strong>
-              {user?.full_name}
-            </strong>
-
-            <span>
-              {user?.employee_id}
-            </span>
-
+          <div className="dem-kpi-card">
+            <div className="dem-kpi-top">
+              <span className="dem-kpi-label">Active Cases</span>
+              <span className="dem-kpi-icon">📁</span>
+            </div>
+            <div className="dem-kpi-val">{cases.length}</div>
+            <div className="dem-kpi-desc">Open investigation portfolios</div>
           </div>
 
-        </header>
-
-        {/* STATISTICS */}
-
-        <section className="stats">
-
-          <div className="stat-card">
-            <span>Total Evidence</span>
-
-            <strong>
-              {evidence.length}
-            </strong>
+          <div className="dem-kpi-card">
+            <div className="dem-kpi-top">
+              <span className="dem-kpi-label">Verified Assets</span>
+              <span className="dem-kpi-icon" style={{ background: "rgba(16, 185, 129, 0.12)", borderColor: "rgba(16, 185, 129, 0.3)" }}>✓</span>
+            </div>
+            <div className="dem-kpi-val" style={{ color: "#34D399" }}>{verifiedCount}</div>
+            <div className="dem-kpi-desc">Hash-verified without mutation</div>
           </div>
 
-        <div className="stat-card">
-          <span>Total Cases</span>
-
-          <strong>
-            {cases.length}
-          </strong>
+          <div className={`dem-kpi-card ${tamperedCount > 0 ? "dem-kpi-alert" : ""}`}>
+            <div className="dem-kpi-top">
+              <span className="dem-kpi-label">Tamper Alerts</span>
+              <span className="dem-kpi-icon">⚠</span>
+            </div>
+            <div className="dem-kpi-val">{tamperedCount}</div>
+            <div className="dem-kpi-desc">
+              {tamperedCount > 0 ? "Potential integrity breach detected" : "Zero tampering discrepancies"}
+            </div>
+          </div>
         </div>
-          <div className="stat-card">
-            <span>Verified</span>
 
-            <strong>
-              {verifiedCount}
-            </strong>
-          </div>
-
-          <div className="stat-card alert-card">
-            <span>Tamper Alerts</span>
-
-            <strong>
-              {tamperedCount}
-            </strong>
-          </div>
-
-        </section>
-
-        {/* RECENT EVIDENCE */}
-
-        <section className="dashboard-section">
-
-          <div className="section-header">
-
+        {/* RECENT EVIDENCE SECTION */}
+        <div>
+          <div className="dem-section-header">
             <div>
-              <h2>Recent Evidence</h2>
-
-              <p>
-                Recently added digital evidence
+              <h2 className="dem-section-title">Recent Digital Ingestion</h2>
+              <p className="dem-section-subtitle">
+                Latest digital assets committed into cryptographic custody
               </p>
             </div>
 
-            <button
-              className="primary-button"
-              onClick={() =>
-                setCurrentPage("upload")
-              }
+            <Button
+              variant="primary"
+              icon="+"
+              onClick={() => setCurrentPage("upload")}
             >
-              + Upload Evidence
-            </button>
-
+              Upload Evidence
+            </Button>
           </div>
 
-          <div className="evidence-table">
-
-            <div className="table-header">
-
-              <span>Evidence No.</span>
-              <span>Name</span>
-              <span>Type</span>
-              <span>Uploaded By</span>
-
-            </div>
-
-            {evidenceLoading && (
-              <div className="table-row">
-                <span>
-                  Loading evidence...
-                </span>
+          {evidenceLoading && (
+            <Card>
+              <div style={{ textAlign: "center", padding: "32px", color: "var(--text-secondary)" }}>
+                <span className="dem-btn-spinner" style={{ display: "inline-block", marginBottom: "12px", width: "24px", height: "24px", borderColor: "rgba(139, 92, 246, 0.3)", borderTopColor: "var(--accent)" }} />
+                <div>Loading recent evidence assets...</div>
               </div>
-            )}
+            </Card>
+          )}
 
-            {!evidenceLoading &&
-              evidence.length === 0 && (
-                <div className="table-row">
-                  <span>
-                    No evidence found
-                  </span>
-                </div>
-              )}
+          {!evidenceLoading && evidence.length === 0 && (
+            <EmptyState
+              icon="📭"
+              title="No Evidence Ingested Yet"
+              message="Get started by submitting digital evidence files into an open case."
+            />
+          )}
 
-            {!evidenceLoading &&
-              evidence.length > 0 &&
-              evidence
-                .slice(0, 5)
-                .map((item) => (
+          {!evidenceLoading && evidence.length > 0 && (
+            <Card style={{ padding: "0", overflow: "hidden" }}>
+              <div className="dem-table-container" style={{ border: "none" }}>
+                <table className="dem-table">
+                  <thead>
+                    <tr>
+                      <th>Evidence Number</th>
+                      <th>Evidence Name</th>
+                      <th>Type</th>
+                      <th>Uploaded By</th>
+                      <th>Date Ingested</th>
+                      <th style={{ textAlign: "right" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evidence.slice(0, 5).map((item) => (
+                      <tr key={item.evidence_id}>
+                        <td>
+                          <span className="dem-evidence-id-badge">
+                            {item.evidence_number}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>
+                          {item.evidence_name}
+                        </td>
+                        <td>
+                          <Badge
+                            variant={
+                              (item.evidence_type || "").toLowerCase().includes("doc")
+                                ? "doc"
+                                : (item.evidence_type || "").toLowerCase().includes("img") || (item.evidence_type || "").toLowerCase().includes("image")
+                                ? "image"
+                                : (item.evidence_type || "").toLowerCase().includes("vid")
+                                ? "video"
+                                : (item.evidence_type || "").toLowerCase().includes("aud")
+                                ? "audio"
+                                : "default"
+                            }
+                          >
+                            {item.evidence_type || "File"}
+                          </Badge>
+                        </td>
+                        <td style={{ color: "var(--text-secondary)" }}>
+                          User {item.uploaded_by}
+                        </td>
+                        <td style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                          {item.uploaded_at ? new Date(item.uploaded_at).toLocaleDateString() : "N/A"}
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedCaseId(item.case_id);
+                              setCurrentPage("evidence");
+                            }}
+                          >
+                            Inspect Vault ➔
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
 
-                  <div
-                    className="table-row"
-                    key={item.evidence_id}
-                  >
-
-                    <span>
-                      {item.evidence_number}
-                    </span>
-
-                    <span>
-                      {item.evidence_name}
-                    </span>
-
-                    <span>
-                      {item.evidence_type}
-                    </span>
-
-                    <span>
-                      User {item.uploaded_by}
-                    </span>
-
-                  </div>
-
-                ))}
-
-          </div>
-
-        </section>
-
-        {/* SECURITY OVERVIEW */}
-
-        <section className="dashboard-section">
-
-          <div className="section-header">
-
+        {/* CRYPTOGRAPHIC SECURITY OVERVIEW */}
+        <div>
+          <div className="dem-section-header">
             <div>
-              <h2>Security Overview</h2>
-
-              <p>
-                Evidence security and system activity
+              <h2 className="dem-section-title">Cryptographic Defense Framework</h2>
+              <p className="dem-section-subtitle">
+                Built-in mathematical integrity guarantees and access controls
               </p>
             </div>
-
           </div>
 
-          <div className="security-grid">
-
-            <div className="security-item">
-
-              <span>🔐</span>
-
-              <div>
-                <strong>
-                  Encryption
-                </strong>
-
-                <p>
-                  AES-256-GCM enabled
+          <div className="dem-security-grid">
+            <div className="dem-security-card">
+              <span className="dem-security-icon-box">🔐</span>
+              <div className="dem-security-info-box">
+                <h4 className="dem-security-info-title">Envelope Encryption</h4>
+                <p className="dem-security-info-desc">
+                  Authenticated AES-256-GCM encryption with Galois/Counter Mode authentication tags.
                 </p>
               </div>
-
             </div>
 
-            <div className="security-item">
-
-              <span>🛡️</span>
-
-              <div>
-                <strong>
-                  Integrity
-                </strong>
-
-                <p>
-                  SHA-256 verification
+            <div className="dem-security-card">
+              <span className="dem-security-icon-box">🛡️</span>
+              <div className="dem-security-info-box">
+                <h4 className="dem-security-info-title">SHA-256 Signatures</h4>
+                <p className="dem-security-info-desc">
+                  Strict cryptographic digest validation for zero-trust mathematical non-repudiation.
                 </p>
               </div>
-
             </div>
 
-            <div className="security-item">
-
-              <span>🔗</span>
-
-              <div>
-                <strong>
-                  Chain of Custody
-                </strong>
-
-                <p>
-                  Tracking enabled
+            <div className="dem-security-card">
+              <span className="dem-security-icon-box">🔗</span>
+              <div className="dem-security-info-box">
+                <h4 className="dem-security-info-title">Chain of Custody</h4>
+                <p className="dem-security-info-desc">
+                  Append-only immutable transfer events recording every custodial handover.
                 </p>
               </div>
-
             </div>
 
-            <div className="security-item">
-
-              <span>📋</span>
-
-              <div>
-                <strong>
-                  Audit Logging
-                </strong>
-
-                <p>
-                  System activity recorded
+            <div className="dem-security-card">
+              <span className="dem-security-icon-box">📋</span>
+              <div className="dem-security-info-box">
+                <h4 className="dem-security-info-title">Immutable Audit Trail</h4>
+                <p className="dem-security-info-desc">
+                  Granular forensic logging for administrative actions, access events, and inspections.
                 </p>
               </div>
-
             </div>
-
           </div>
-
-        </section>
-      </>
+        </div>
+      </div>
     );
   };
 
