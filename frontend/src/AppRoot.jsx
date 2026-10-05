@@ -1619,105 +1619,117 @@ const fetchAuditLogs = async () => {
 
 const renderAuditPage = () => {
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <h1>Audit Logs</h1>
+    <div className="dem-page-container">
+      {/* Page Header */}
+      <PageHeader
+        title="System Audit Logs"
+        subtitle="Chronological, tamper-evident audit record tracking all system authentications and evidence operations."
+        user={user}
+      />
 
-          <p>
-            Track system activities and evidence operations
-          </p>
-        </div>
-
-        <div className="user-info">
-          <strong>{user?.full_name}</strong>
-          <span>{user?.employee_id}</span>
-        </div>
-      </header>
-
-      <section className="dashboard-section">
-
-        <div className="section-header">
+      {/* AUDIT LOGS SECTION */}
+      <div>
+        <div className="dem-section-header">
           <div>
-            <h2>System Activity</h2>
-
-            <p>
-              {auditLogs.length} audit record
-              {auditLogs.length !== 1 ? "s" : ""}
+            <h2 className="dem-section-title">System Activity Trail</h2>
+            <p className="dem-section-subtitle">
+              {auditLogs.length} immutable event record{auditLogs.length !== 1 ? "s" : ""} recorded in security journal
             </p>
           </div>
 
-          <button
-            className="primary-button"
+          <Button
+            variant="outline"
+            icon="↻"
             onClick={fetchAuditLogs}
+            disabled={auditLoading}
           >
-            ↻ Refresh
-          </button>
+            {auditLoading ? "Refreshing..." : "Refresh"}
+          </Button>
         </div>
 
         {auditLoading && (
-          <div className="evidence-page-message">
-            Loading audit logs...
-          </div>
+          <Card>
+            <div style={{ textAlign: "center", padding: "32px", color: "var(--text-secondary)" }}>
+              <span className="dem-btn-spinner" style={{ display: "inline-block", marginBottom: "12px", width: "24px", height: "24px", borderColor: "rgba(139, 92, 246, 0.3)", borderTopColor: "var(--accent)" }} />
+              <div>Loading cryptographic security journal...</div>
+            </div>
+          </Card>
         )}
 
         {!auditLoading && auditLogs.length === 0 && (
-          <div className="evidence-page-message">
-            No audit logs found.
-          </div>
+          <EmptyState
+            icon="📋"
+            title="No Audit Records Found"
+            message="No system activities or evidence actions have been logged yet."
+          />
         )}
 
         {!auditLoading && auditLogs.length > 0 && (
-          <div className="evidence-table">
+          <Card style={{ padding: "0", overflow: "hidden" }}>
+            <div className="dem-table-container" style={{ border: "none" }}>
+              <table className="dem-table">
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>User / Operator</th>
+                    <th>Evidence Reference</th>
+                    <th>Operation Details</th>
+                    <th style={{ textAlign: "right" }}>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map((log) => {
+                    const actionStr = (log.action || "").toUpperCase();
+                    const badgeVariant =
+                      actionStr.includes("VERIF") || actionStr.includes("VALID")
+                        ? "valid"
+                        : actionStr.includes("TAMPER") || actionStr.includes("ERROR") || actionStr.includes("FAIL")
+                        ? "tampered"
+                        : actionStr.includes("TRANS")
+                        ? "warning"
+                        : actionStr.includes("UPLOAD") || actionStr.includes("CREATE")
+                        ? "accent"
+                        : actionStr.includes("AUTH") || actionStr.includes("LOGIN")
+                        ? "info"
+                        : "default";
 
-            <div className="table-header">
-              <span>Action</span>
-              <span>User</span>
-              <span>Evidence</span>
-              <span>Details</span>
-              <span>Date & Time</span>
+                    return (
+                      <tr key={log.audit_id}>
+                        <td>
+                          <Badge variant={badgeVariant}>
+                            {log.action}
+                          </Badge>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>
+                          {log.user_name || `User ${log.user_id}`}
+                        </td>
+                        <td>
+                          {log.evidence_number ? (
+                            <span className="dem-evidence-id-badge">
+                              {log.evidence_number}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--text-dim)" }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ color: "var(--text-secondary)", maxWidth: "340px", wordBreak: "break-word" }}>
+                          {log.details || "—"}
+                        </td>
+                        <td style={{ textAlign: "right", color: "var(--text-muted)", fontSize: "13px", fontFamily: "var(--font-mono)" }}>
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-
-            {auditLogs.map((log) => (
-              <div
-                className="table-row"
-                key={log.audit_id}
-              >
-
-                <span>
-                  <strong>{log.action}</strong>
-                </span>
-
-                <span>
-                  {log.user_name ||
-                    `User ${log.user_id}`}
-                </span>
-
-                <span>
-                  {log.evidence_number || "—"}
-                </span>
-
-                <span>
-                  {log.details || "—"}
-                </span>
-
-                <span>
-                  {new Date(
-                    log.created_at
-                  ).toLocaleString()}
-                </span>
-
-              </div>
-            ))}
-
-          </div>
+          </Card>
         )}
-
-      </section>
-    </>
+      </div>
+    </div>
   );
-
-}
+};
 // ============================================================
 // CASES PAGE
 // ============================================================
