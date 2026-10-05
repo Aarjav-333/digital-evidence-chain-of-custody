@@ -1,5 +1,6 @@
 const nodemailer = require("nodemailer");
 const pool = require("../config/db");
+const auditService = require("./auditService");
 
 /**
  * Checks whether SMTP environment variables are properly populated.
@@ -17,7 +18,8 @@ let cachedTransporter = null;
 let cachedEtherealTransporter = null;
 
 /**
- * Creates or retrieves the cached Nodemailer transporter instance.
+ * Creates or retrieves the mail transporter instance.
+ * Ethereal fallback is ONLY activated when DEMO_MAIL=true or explicitly requested for testing.
  */
 const getTransporter = async (forceEthereal = false) => {
     if (isSmtpConfigured() && !forceEthereal) {
@@ -41,11 +43,12 @@ const getTransporter = async (forceEthereal = false) => {
         return { transporter: cachedTransporter, isEthereal: false };
     }
 
-    if (process.env.ENABLE_ETHEREAL_DEMO === "true" || forceEthereal) {
+    const isDemoMailEnabled = String(process.env.DEMO_MAIL || "").toLowerCase() === "true";
+    if (isDemoMailEnabled || forceEthereal) {
         if (!cachedEtherealTransporter) {
-            console.log("[EmailService] Initializing Ethereal demo mail transport for safe testing...");
+            console.log("[EmailService] DEMO_MAIL=true active. Creating temporary Ethereal test inbox...");
             const testAccount = await nodemailer.createTestAccount();
-            console.log(`[EmailService] Ethereal demo inbox created for: ${testAccount.user}`);
+            console.log(`[EmailService] Ethereal demo test account ready: ${testAccount.user}`);
             cachedEtherealTransporter = nodemailer.createTransport({
                 host: testAccount.smtp.host,
                 port: testAccount.smtp.port,
@@ -93,26 +96,40 @@ const resolveRecipientEmail = async () => {
 };
 
 /**
+ * Masks an email address for safe display in logs and UI (e.g., v***@gmail.com).
+ */
+const maskEmail = (email) => {
+    if (!email || typeof email !== "string") return null;
+    return email.replace(/^(.)(.*)(@.*)$/, (_, first, middle, domain) => `${first}***${domain}`);
+};
+
+/**
+ * Returns current email configuration status for frontend awareness.
+ * Strictly avoids exposing passwords, tokens, or credentials.
+ */
+const getEmailConfigurationStatus = () => {
+    const configured = isSmtpConfigured();
+    const demoMail = String(process.env.DEMO_MAIL || "").toLowerCase() === "true";
+    return {
+        smtp_configured: configured,
+        demo_mail: demoMail,
+        sender: configured ? maskEmail(process.env.SMTP_USER) : null,
+        host: configured ? process.env.SMTP_HOST : null,
+        port: configured ? (parseInt(process.env.SMTP_PORT, 10) || 587) : null
+    };
+};
+
+/**
  * Dispatches a high-priority tamper alert notification email to the System Administrator.
  *
  * @param {Object} alertDetails Details of the newly created tamper alert
+ * @param {Object} options Optional overrides (e.g. forceEthereal)
  * @returns {Promise<Object>} Status object with send result
  */
 const sendTamperAlertEmail = async (alertDetails, options = {}) => {
     try {
         const forceEthereal = Boolean(options.useEthereal);
         const { transporter, isEthereal } = await getTransporter(forceEthereal);
-        if (!transporter) {
-            console.log("[EmailService] SMTP email notifications are not configured.");
-            return { sent: false, reason: "SMTP_NOT_CONFIGURED" };
-        }
-
-        const resolved = await resolveRecipientEmail();
-        const recipient = resolved || (isEthereal ? "admin.sentinel@dig-evi.local" : null);
-        if (!recipient) {
-            console.warn("[EmailService] No recipient email address available for tamper alert. Set SYSTEM_ADMIN_EMAIL in .env or configure an active System Administrator email in the database.");
-            return { sent: false, reason: "NO_RECIPIENT_EMAIL" };
-        }
 
         const {
             alert_id,
@@ -127,8 +144,41 @@ const sendTamperAlertEmail = async (alertDetails, options = {}) => {
             stored_hash,
             detected_hash,
             file_path,
-            message
+            message,
+            audit_user_id
         } = alertDetails || {};
+
+        if (!transporter) {
+            console.error(
+                `[EmailService] SMTP email notifications are not configured (SMTP_HOST, SMTP_USER, or SMTP_PASS missing) and DEMO_MAIL is not set. Email alert suppressed for exhibit ${evidence_number || evidence_id}.`
+            );
+
+            // Record a SYSTEM_WARNING in audit_logs so the administrative record shows why email was not dispatched
+            try {
+                const adminId = audit_user_id || 6;
+                await auditService.createAuditLog(
+                    adminId,
+                    evidence_id || null,
+                    "SYSTEM_WARNING",
+                    `Email alerts are not configured: SMTP credentials missing in environment variables. Evidence tamper alert was not emailed for exhibit ${evidence_number || evidence_id || "N/A"}.`
+                );
+            } catch (auditErr) {
+                console.warn("[EmailService] Failed to record SYSTEM_WARNING audit log:", auditErr.message);
+            }
+
+            return {
+                sent: false,
+                reason: "SMTP_NOT_CONFIGURED",
+                warningLogged: true
+            };
+        }
+
+        const resolved = await resolveRecipientEmail();
+        const recipient = resolved || (isEthereal ? "admin.sentinel@dig-evi.local" : null);
+        if (!recipient) {
+            console.warn("[EmailService] No recipient email address available for tamper alert. Set SYSTEM_ADMIN_EMAIL in .env or configure an active System Administrator email in the database.");
+            return { sent: false, reason: "NO_RECIPIENT_EMAIL" };
+        }
 
         const detectionTime = detected_at
             ? new Date(detected_at).toLocaleString("en-US", { timeZone: "UTC", dateStyle: "full", timeStyle: "long" }) + " (UTC)"
@@ -247,7 +297,7 @@ Sentinel Background Automated Integrity Monitor
         if (previewUrl) {
             console.log(`[EmailService] >>> Ethereal demo email preview URL: ${previewUrl}`);
         } else {
-            console.log(`[EmailService] Tamper alert notification successfully sent to ${recipient} (Message ID: ${sendResult.messageId})`);
+            console.log(`[EmailService] Tamper alert notification successfully sent to ${maskEmail(recipient)} (Message ID: ${sendResult.messageId})`);
         }
 
         return {
@@ -263,6 +313,116 @@ Sentinel Background Automated Integrity Monitor
         return {
             sent: false,
             error: err.message
+        };
+    }
+};
+
+/**
+ * Sends a safe administrative test email using configured SMTP settings.
+ * Strictly sanitizes output so passwords and credentials are never leaked.
+ *
+ * @param {number} requestedByUserId The user ID of the requesting administrator
+ * @returns {Promise<Object>} Safe result summary
+ */
+const sendTestEmail = async (requestedByUserId) => {
+    try {
+        const isConfigured = isSmtpConfigured();
+        const isDemoMail = String(process.env.DEMO_MAIL || "").toLowerCase() === "true";
+
+        if (!isConfigured && !isDemoMail) {
+            return {
+                success: false,
+                configured: false,
+                error: "SMTP credentials are not configured in backend/.env. Please configure SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."
+            };
+        }
+
+        const { transporter, isEthereal } = await getTransporter();
+        if (!transporter) {
+            return {
+                success: false,
+                configured: false,
+                error: "Unable to initialize mail transport."
+            };
+        }
+
+        const recipient = (await resolveRecipientEmail()) || (isEthereal ? "admin.sentinel@dig-evi.local" : null);
+        if (!recipient) {
+            return {
+                success: false,
+                configured: true,
+                error: "No administrator recipient email found. Configure SYSTEM_ADMIN_EMAIL in .env or set an admin user email in the database."
+            };
+        }
+
+        const fromAddress = process.env.SMTP_FROM || `"DIG_EVI Sentinel" <${process.env.SMTP_USER || "sentinel@dig-evi.local"}>`;
+        const testTimestamp = new Date().toUTCString();
+
+        const info = await transporter.sendMail({
+            from: fromAddress,
+            to: recipient,
+            subject: "[DIG_EVI] Forensic Sentinel — SMTP Configuration Test",
+            text: `This is a test notification from the DIG_EVI Digital Evidence Management System sent at ${testTimestamp}. Your SMTP mail transport is operational.`,
+            html: `
+                <div style="font-family: sans-serif; padding: 20px; background: #f8fafc;">
+                    <div style="max-width: 500px; margin: 0 auto; background: white; padding: 24px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <h3 style="color: #4f46e5; margin-top: 0;">🛡️ DIG_EVI Mail Dispatch Test</h3>
+                        <p style="font-size: 14px; color: #334155;">This is an administrative test notification confirming that the DIG_EVI SMTP dispatch channel is operational.</p>
+                        <p style="font-size: 12px; color: #64748b;">Timestamp: ${testTimestamp}</p>
+                    </div>
+                </div>
+            `
+        });
+
+        const previewUrl = isEthereal ? nodemailer.getTestMessageUrl(info) : null;
+        const maskedRecipient = maskEmail(recipient);
+
+        // Record successful test in audit logs
+        if (requestedByUserId) {
+            try {
+                await auditService.createAuditLog(
+                    requestedByUserId,
+                    null,
+                    "EMAIL_TEST_SENT",
+                    `Administrative test email sent successfully to ${maskedRecipient}`
+                );
+            } catch (_) {}
+        }
+
+        return {
+            success: true,
+            configured: true,
+            isDemo: isEthereal,
+            recipient: maskedRecipient,
+            messageId: info.messageId,
+            previewUrl: previewUrl,
+            message: `Test email successfully dispatched to ${maskedRecipient}`
+        };
+    } catch (err) {
+        // Sanitize error string so no passwords or tokens can leak
+        let safeError = err.message || "Unknown SMTP dispatch error";
+        if (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) {
+            safeError = safeError.split(process.env.SMTP_PASS.trim()).join("[REDACTED]");
+        }
+        if (process.env.JWT_SECRET && process.env.JWT_SECRET.trim()) {
+            safeError = safeError.split(process.env.JWT_SECRET.trim()).join("[REDACTED]");
+        }
+
+        if (requestedByUserId) {
+            try {
+                await auditService.createAuditLog(
+                    requestedByUserId,
+                    null,
+                    "EMAIL_TEST_FAILED",
+                    `Administrative test email failed: ${safeError}`
+                );
+            } catch (_) {}
+        }
+
+        return {
+            success: false,
+            configured: true,
+            error: safeError
         };
     }
 };
@@ -299,7 +459,9 @@ module.exports = {
     isSmtpConfigured,
     getTransporter,
     resolveRecipientEmail,
+    maskEmail,
+    getEmailConfigurationStatus,
     sendTamperAlertEmail,
+    sendTestEmail,
     verifySmtpConnection
 };
-

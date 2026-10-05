@@ -8,15 +8,20 @@ export default function AlertCenter({ user, onRefresh }) {
     total_alerts: 0,
     active_alerts: 0,
     resolved_alerts: 0,
-    critical_active: 0
+    critical_active: 0,
+    email_status: null
   });
 
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState(null);
 
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState(null);
+
   const [resolvingAlert, setResolvingAlert] = useState(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [resolvingLoading, setResolvingLoading] = useState(false);
+  const [resolveError, setResolveError] = useState(null);
 
   const token = localStorage.getItem("token");
 
@@ -54,7 +59,8 @@ export default function AlertCenter({ user, onRefresh }) {
           total_alerts: Number(data.data.total_alerts || 0),
           active_alerts: Number(data.data.active_alerts || 0),
           resolved_alerts: Number(data.data.resolved_alerts || 0),
-          critical_active: Number(data.data.critical_active || 0)
+          critical_active: Number(data.data.critical_active || 0),
+          email_status: data.data.email_status || null
         });
       }
     } catch (err) {
@@ -108,10 +114,46 @@ export default function AlertCenter({ user, onRefresh }) {
     }
   };
 
+  const handleSendTestEmail = async () => {
+    if (!token) return;
+    setTestEmailLoading(true);
+    setTestEmailResult(null);
+    try {
+      const res = await fetch("http://localhost:3000/api/alerts/test-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestEmailResult({
+          success: true,
+          message: data.message || "Test email dispatched successfully!",
+          previewUrl: data.data?.previewUrl
+        });
+      } else {
+        setTestEmailResult({
+          success: false,
+          message: data.message || "Failed to send test email"
+        });
+      }
+    } catch (err) {
+      setTestEmailResult({
+        success: false,
+        message: err.message
+      });
+    } finally {
+      setTestEmailLoading(false);
+    }
+  };
+
   const handleResolveSubmit = async (e) => {
     e.preventDefault();
     if (!resolvingAlert || !token) return;
     setResolvingLoading(true);
+    setResolveError(null);
     try {
       const res = await fetch("http://localhost:3000/api/alerts/" + resolvingAlert.alert_id + "/resolve", {
         method: "PUT",
@@ -129,10 +171,10 @@ export default function AlertCenter({ user, onRefresh }) {
         await fetchStats();
         if (onRefresh) onRefresh();
       } else {
-        alert(data.message || "Failed to resolve alert");
+        setResolveError(data.message || "Failed to resolve alert");
       }
     } catch (err) {
-      alert("Error resolving alert: " + err.message);
+      setResolveError("Error resolving alert: " + err.message);
     } finally {
       setResolvingLoading(false);
     }
@@ -158,6 +200,108 @@ export default function AlertCenter({ user, onRefresh }) {
           <span>{user?.employee_id || "POL2026002"}</span>
         </div>
       </header>
+
+      {/* EMAIL ALERTS CONFIGURATION BANNER */}
+      {stats.email_status && !stats.email_status.smtp_configured && !stats.email_status.demo_mail && (
+        <div style={{
+          background: "rgba(239, 68, 68, 0.10)",
+          border: "1px solid rgba(239, 68, 68, 0.3)",
+          borderRadius: "8px",
+          padding: "14px 18px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "14px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: "260px" }}>
+            <span style={{ fontSize: "22px" }}>⚠️</span>
+            <div>
+              <strong style={{ color: "#f87171", fontSize: "14px", display: "block" }}>
+                Email alerts are not configured
+              </strong>
+              <span style={{ fontSize: "13px", color: "var(--text-muted, #94a3b8)" }}>
+                Tamper notifications will not be emailed to administrators. Configure SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS in backend/.env.
+              </span>
+            </div>
+          </div>
+          {user?.role_id === 1 && (
+            <button
+              className="secondary-button"
+              style={{ whiteSpace: "nowrap", padding: "8px 14px", fontSize: "13px" }}
+              onClick={handleSendTestEmail}
+              disabled={testEmailLoading}
+            >
+              {testEmailLoading ? "Testing..." : "Send Test Email"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {stats.email_status && (stats.email_status.smtp_configured || stats.email_status.demo_mail) && (
+        <div style={{
+          background: "rgba(99, 102, 241, 0.08)",
+          border: "1px solid rgba(99, 102, 241, 0.25)",
+          borderRadius: "8px",
+          padding: "12px 18px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "14px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "18px" }}>📬</span>
+            <span style={{ fontSize: "13px", color: "var(--text-main, #e2e8f0)" }}>
+              {stats.email_status.smtp_configured
+                ? `SMTP Active (${stats.email_status.sender || "Configured"})`
+                : "Demo Email Mode Active (DEMO_MAIL=true)"}
+            </span>
+          </div>
+          {user?.role_id === 1 && (
+            <button
+              className="secondary-button"
+              style={{ whiteSpace: "nowrap", padding: "6px 12px", fontSize: "12px" }}
+              onClick={handleSendTestEmail}
+              disabled={testEmailLoading}
+            >
+              {testEmailLoading ? "Sending..." : "Send Test Email"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* TEST EMAIL FEEDBACK */}
+      {testEmailResult && (
+        <div
+          className={testEmailResult.success ? "success-message" : "error-message"}
+          style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+        >
+          <div>
+            <span>{testEmailResult.message}</span>
+            {testEmailResult.previewUrl && (
+              <div style={{ marginTop: "6px" }}>
+                <a
+                  href={testEmailResult.previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#a5b4fc", textDecoration: "underline", fontSize: "12px" }}
+                >
+                  View Rendered Ethereal Email ↗
+                </a>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setTestEmailResult(null)}
+            style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "16px" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* CRITICAL INCIDENT BANNER */}
       {stats.critical_active > 0 && (
@@ -371,6 +515,12 @@ export default function AlertCenter({ user, onRefresh }) {
               <div><strong>Incident Type:</strong> <span style={{ color: "#f87171" }}>{resolvingAlert.alert_type}</span></div>
               <div style={{ marginTop: "6px", fontSize: "12px", color: "#d1d5db" }}>{resolvingAlert.message}</div>
             </div>
+
+            {resolveError && (
+              <div className="error-message" style={{ marginBottom: "14px" }}>
+                {resolveError}
+              </div>
+            )}
 
             <form onSubmit={handleResolveSubmit}>
               <div className="form-group">

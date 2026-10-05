@@ -6,17 +6,12 @@
  * Demonstrates the end-to-end cryptographic tamper detection and notification
  * workflow using ONLY test record EV-2026-012 (evidence_id: 14).
  *
- * Steps performed:
- * 1. Verifies test record EV-2026-012 and backs up its .enc file outside uploads/
- * 2. Initializes Ethereal demo mail transport for safe offline verification
- * 3. Safely flips 1 byte in the test exhibit's ciphertext .enc file
- * 4. Triggers the cryptographic integrity scanner
- * 5. Captures and displays:
- *    - Database tamper_alerts row
- *    - Audit trail audit_logs entry
- *    - Dispatched email with Ethereal preview URL
- * 6. Restores original .enc file from backup and verifies status is INTACT
- * 7. Resolves the demo alert in PostgreSQL
+ * Safety Guards:
+ * - Refuses to execute if NODE_ENV === 'production'
+ * - Hardcoded restriction strictly to test record EV-2026-012 (evidence_id: 14)
+ * - Activates DEMO_MAIL=true sandbox exclusively for this test run
+ * - Performs backup outside uploads/ before tampering
+ * - Always restores original .enc file bit-for-bit in finally block
  *
  * Usage:
  *   node backend/src/utils/demoTamperAlert.js
@@ -32,7 +27,18 @@ const alertService = require("../services/alertService");
 const alertModel = require("../models/alertModel");
 const emailService = require("../services/emailService");
 
+// Production safety guard: Refuse to run in production
+if (process.env.NODE_ENV === "production") {
+    console.error("\n================================================================================");
+    console.error("FATAL SAFETY ERROR: Refusing to execute tamper demo in PRODUCTION environment!");
+    console.error("NODE_ENV is set to 'production'. Demo execution aborted.");
+    console.error("================================================================================\n");
+    process.exit(1);
+}
+
+// Strict exhibit restriction
 const TEST_EVIDENCE_ID = 14;
+const EXPECTED_EVIDENCE_NUMBER = "EV-2026-012";
 
 // External backup directory outside uploads/
 const BACKUP_DIR = path.resolve(__dirname, "../../../scratch/backups");
@@ -42,20 +48,28 @@ async function runSafeDemo() {
     console.log("           DIG_EVI — TAMPER ALERT SYSTEM SAFE DEMONSTRATION                     ");
     console.log("================================================================================\n");
 
-    // Enable Ethereal demo email transport for this session
-    process.env.ENABLE_ETHEREAL_DEMO = "true";
+    // Enable demo email transport exclusively for this test session
+    process.env.DEMO_MAIL = "true";
 
-    // Step 0: Fetch test exhibit metadata
+    // Step 0: Fetch test exhibit metadata and verify strict exhibit identity
     const evRes = await pool.query("SELECT * FROM evidence WHERE evidence_id = $1;", [TEST_EVIDENCE_ID]);
     if (evRes.rows.length === 0) {
         throw new Error(`Test exhibit with evidence_id ${TEST_EVIDENCE_ID} not found in database!`);
     }
     const testEvidence = evRes.rows[0];
+
+    if (testEvidence.evidence_id !== TEST_EVIDENCE_ID || testEvidence.evidence_number !== EXPECTED_EVIDENCE_NUMBER) {
+        console.error(`\nFATAL SAFETY VIOLATION: Target record is not the verified test exhibit!`);
+        console.error(`Expected: #${TEST_EVIDENCE_ID} (${EXPECTED_EVIDENCE_NUMBER}), Received: #${testEvidence.evidence_id} (${testEvidence.evidence_number})`);
+        process.exit(1);
+    }
+
     const encFilePath = path.resolve(testEvidence.file_path);
 
     console.log(`[Target Exhibit] Exhibit: ${testEvidence.evidence_number} ("${testEvidence.evidence_name}")`);
     console.log(`[Target Exhibit] File:    ${path.basename(encFilePath)}`);
-    console.log(`[Target Exhibit] SHA-256: ${testEvidence.file_hash}\n`);
+    console.log(`[Target Exhibit] SHA-256: ${testEvidence.file_hash}`);
+    console.log(`[Target Exhibit] Safety:  RESTRICTED TO TEST EXHIBIT ONLY\n`);
 
     if (!fs.existsSync(encFilePath)) {
         throw new Error(`Encrypted file not found on disk at: ${encFilePath}`);
@@ -89,7 +103,7 @@ async function runSafeDemo() {
     try {
         // Step 2: Configure Demo Mail Transport
         console.log("--------------------------------------------------------------------------------");
-        console.log("STEP 2: Initializing Ethereal demo mail transport...");
+        console.log("STEP 2: Initializing Ethereal demo mail transport (DEMO_MAIL=true)...");
         console.log("--------------------------------------------------------------------------------");
         const smtpConn = await emailService.verifySmtpConnection();
         console.log(`[Transport] Status:  ${smtpConn.message}`);
@@ -173,7 +187,7 @@ async function runSafeDemo() {
         console.log(">>> [4/4] CAPTURED SECURITY NOTIFICATION EMAIL:");
         if (emailResult && emailResult.sent) {
             console.log(`    Status:          SENT via Ethereal`);
-            console.log(`    Recipient:       ${emailResult.recipient.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => a + "***" + c)}`);
+            console.log(`    Recipient:       ${emailService.maskEmail(emailResult.recipient)}`);
             console.log(`    Subject:         ${emailResult.subject}`);
             console.log(`    Message ID:      ${emailResult.messageId}`);
             if (emailResult.previewUrl) {
@@ -224,8 +238,8 @@ async function runSafeDemo() {
         }
 
         // Remove demo transport setting
-        delete process.env.ENABLE_ETHEREAL_DEMO;
-        console.log("[Cleanup] Ethereal demo transport unmounted.");
+        delete process.env.DEMO_MAIL;
+        console.log("[Cleanup] DEMO_MAIL transport unmounted.");
     }
 
     console.log("================================================================================");

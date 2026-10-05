@@ -58,13 +58,33 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
         file_hash,
         encrypted_aes_key,
         encryption_iv,
-        encryption_auth_tag
+        encryption_auth_tag,
+        description
     } = evidenceItem;
 
     const auditUserId = scanUserId || (await getSystemAdminId());
     const absolutePath = resolveEvidenceFilePath(file_path);
 
+    // Identify legacy/seed mock exhibits (e.g. records 1-3 from database seeding)
+    const isLegacySeedRecord = Boolean(
+        (evidence_id <= 3 && encrypted_aes_key === "temporary_key") ||
+        (description && description.includes("[LEGACY SEED"))
+    );
+
     if (!fs.existsSync(absolutePath)) {
+        // Legacy seed records never had physical files created on disk storage.
+        // We categorize them as LEGACY_SEED instead of creating permanent CRITICAL alerts.
+        if (isLegacySeedRecord) {
+            return {
+                status: "LEGACY_SEED",
+                evidence_id,
+                evidence_number,
+                is_legacy_seed: true,
+                message: "Catalog-only seed exhibit (no disk payload). Skipped from tamper alerts.",
+                new_alert_created: false
+            };
+        }
+
         const existing = await alertModel.findActiveAlert(evidence_id, "FILE_MISSING");
         let newAlertCreated = false;
         let emailDispatch = null;
@@ -91,7 +111,8 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                 emailDispatch = await emailService.sendTamperAlertEmail({
                     ...createdAlert,
                     evidence_number,
-                    evidence_name: evidenceItem.evidence_name
+                    evidence_name: evidenceItem.evidence_name,
+                    audit_user_id: auditUserId
                 });
             } catch (emErr) {
                 console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
@@ -146,7 +167,8 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                         emailDispatch = await emailService.sendTamperAlertEmail({
                             ...createdAlert,
                             evidence_number,
-                            evidence_name: evidenceItem.evidence_name
+                            evidence_name: evidenceItem.evidence_name,
+                            audit_user_id: auditUserId
                         });
                     } catch (emErr) {
                         console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
@@ -191,7 +213,8 @@ const checkEvidenceIntegrity = async (evidenceItem, scanUserId = null) => {
                     emailDispatch = await emailService.sendTamperAlertEmail({
                         ...createdAlert,
                         evidence_number,
-                        evidence_name: evidenceItem.evidence_name
+                        evidence_name: evidenceItem.evidence_name,
+                        audit_user_id: auditUserId
                     });
                 } catch (emErr) {
                     console.warn("[AlertService] Alert email notification error (non-fatal):", emErr.message);
@@ -234,6 +257,7 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
             evidence_number,
             case_id,
             evidence_name,
+            description,
             file_name,
             file_path,
             file_hash,
@@ -254,13 +278,15 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
 
     const scanned = scanResults.length;
     const intact = scanResults.filter(r => r.status === "INTACT").length;
-    const compromised = scanResults.filter(r => r.status !== "INTACT").length;
+    const legacy_seed = scanResults.filter(r => r.status === "LEGACY_SEED").length;
+    const compromised = scanResults.filter(r => r.status !== "INTACT" && r.status !== "LEGACY_SEED").length;
     const new_alerts_dispatched = scanResults.filter(r => r.new_alert_created === true).length;
 
     return {
         results: scanResults,
         scanned,
         intact,
+        legacy_seed,
         compromised,
         new_alerts_dispatched
     };

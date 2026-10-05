@@ -7,5 +7,6 @@ router.get("/alerts", authenticate, alertController.getAllAlerts);
 router.get("/alerts/stats", authenticate, alertController.getAlertStats);
 router.post("/alerts/run-check", authenticate, alertController.runIntegrityCheck);
 router.put("/alerts/:id/resolve", authenticate, alertController.resolveAlert);
+router.post("/alerts/test-email", authenticate, alertController.sendTestEmail);
 
 module.exports = router;
