@@ -1368,301 +1368,226 @@ const fetchAuditLogs = async () => {
     );
 
     return (
-      <>
-        <header className="dashboard-header">
-          <div>
-            <h1>Chain of Custody</h1>
+      <div className="dem-page-container">
+        {/* Page Header */}
+        <PageHeader
+          title="Chain of Custody"
+          subtitle="Audit chronological custody transfers, custodian authentications, and evidentiary movement records."
+          user={user}
+        />
 
-            <p>
-              Track the movement and handling of digital evidence
-            </p>
-          </div>
-
-          <div className="user-info">
-            <strong>{user?.full_name}</strong>
-            <span>{user?.employee_id}</span>
-          </div>
-        </header>
-
-
-        {/* SELECT EVIDENCE */}
-
-        <section className="dashboard-section">
-
-          <div className="section-header">
-            <div>
-              <h2>Evidence History</h2>
-
-              <p>
-                Select an evidence record to view its custody history
-              </p>
-            </div>
-          </div>
-
-
-          <div className="form-group">
-
-            <label htmlFor="custodyEvidence">
-              Select Evidence
-            </label>
-
-              <select
-                id="custodyEvidence"
-                value={selectedCustodyEvidence}
-                onChange={handleCustodyEvidenceChange}
-                disabled={evidenceLoading}
-              >
-                <option value="">
-                  {evidenceLoading
-                    ? "Loading evidence..."
-                    : evidence.length === 0
-                    ? "No evidence available"
-                    : "Select an evidence record"}
+        {/* SELECT EVIDENCE CARD */}
+        <Card>
+          <FormField
+            label="SELECT DIGITAL EVIDENCE ASSET"
+            id="custodyEvidence"
+          >
+            <select
+              id="custodyEvidence"
+              value={selectedCustodyEvidence}
+              onChange={handleCustodyEvidenceChange}
+              disabled={evidenceLoading}
+              className="dem-select"
+            >
+              <option value="">
+                {evidenceLoading
+                  ? "Loading evidence..."
+                  : evidence.length === 0
+                  ? "No evidence available"
+                  : "-- Choose an evidence asset to inspect custody chain --"}
+              </option>
+              {evidence.map((item) => (
+                <option key={item.evidence_id} value={item.evidence_id}>
+                  {item.evidence_number} — {item.evidence_name}
                 </option>
+              ))}
+            </select>
+          </FormField>
+        </Card>
 
-                {evidence.map((item) => (
-                  <option
-                    key={item.evidence_id}
-                    value={item.evidence_id}
-                  >
-                    {item.evidence_number} — {item.evidence_name}
-                  </option>
-                ))}
-              </select>
-
-          </div>
-
-
-          {selectedEvidence && (
-            <div className="custody-evidence-summary">
-
-              <span className="evidence-number">
-                {selectedEvidence.evidence_number}
-              </span>
-
-              <h3>
-                {selectedEvidence.evidence_name}
-              </h3>
-
-              <p>
-                Case ID: {selectedEvidence.case_id}
-              </p>
-
+        {/* SELECTED EVIDENCE SUMMARY */}
+        {selectedEvidence && (
+          <div className="dem-case-summary-card">
+            <div className="dem-case-summary-left">
+              <span className="dem-case-summary-kicker">Target Evidentiary Asset</span>
+              <h2 className="dem-case-summary-id">{selectedEvidence.evidence_number}</h2>
+              <p className="dem-case-summary-title">{selectedEvidence.evidence_name}</p>
             </div>
-          )}
+            <div className="dem-case-summary-right">
+              <Badge variant="accent" size="lg">
+                Case ID #{selectedEvidence.case_id}
+              </Badge>
+            </div>
+          </div>
+        )}
 
+        {/* CUSTODY TIMELINE SECTION */}
+        <div>
+          <div className="dem-section-header">
+            <div>
+              <h2 className="dem-section-title">Custody Transfer Ledger</h2>
+              <p className="dem-section-subtitle">
+                {custodyLogs.length} immutable handover event{custodyLogs.length !== 1 ? "s" : ""} on record
+              </p>
+            </div>
+          </div>
 
           {custodyLoading && (
-            <div className="evidence-page-message">
-              Loading custody history...
-            </div>
+            <Card>
+              <div style={{ textAlign: "center", padding: "32px", color: "var(--text-secondary)" }}>
+                <span className="dem-btn-spinner" style={{ display: "inline-block", marginBottom: "12px", width: "24px", height: "24px", borderColor: "rgba(139, 92, 246, 0.3)", borderTopColor: "var(--accent)" }} />
+                <div>Loading custody timeline history...</div>
+              </div>
+            </Card>
           )}
 
+          {!custodyLoading && !selectedCustodyEvidence && (
+            <EmptyState
+              icon="🔗"
+              title="No Evidence Selected"
+              message="Select a digital evidence asset from the dropdown above to view its verifiable custody trail."
+            />
+          )}
 
-          {!custodyLoading &&
-            selectedCustodyEvidence &&
-            custodyLogs.length === 0 && (
-              <div className="evidence-page-message">
-                No custody records found for this evidence.
-              </div>
-            )}
+          {!custodyLoading && selectedCustodyEvidence && custodyLogs.length === 0 && (
+            <EmptyState
+              icon="📭"
+              title="No Transfer Records Found"
+              message="This evidence asset has not undergone any custodial transfers since registration."
+            />
+          )}
 
+          {!custodyLoading && custodyLogs.length > 0 && (
+            <div className="dem-timeline">
+              {custodyLogs.map((log, index) => (
+                <div className="dem-timeline-item" key={log.custody_id}>
+                  <div className="dem-timeline-badge">{index + 1}</div>
 
-          {!custodyLoading &&
-            custodyLogs.length > 0 && (
+                  <div className="dem-timeline-content">
+                    <div className="dem-timeline-top">
+                      <div className="dem-timeline-transfer">
+                        <strong>{log.from_user_name || `User ${log.from_user}`}</strong>
+                        <span className="dem-timeline-arrow">➔</span>
+                        <strong>{log.to_user_name || `User ${log.to_user}`}</strong>
+                      </div>
 
-              <div className="custody-timeline">
-
-                {custodyLogs.map((log, index) => (
-
-                  <div
-                    className="custody-item"
-                    key={log.custody_id}
-                  >
-
-                    <div className="custody-dot">
-                      {index + 1}
-                    </div>
-
-                    <div className="custody-content">
-
-                      <div className="custody-action">
+                      <Badge
+                        variant={
+                          log.action === "RECEIVED"
+                            ? "valid"
+                            : log.action === "TRANSFERRED"
+                            ? "accent"
+                            : "default"
+                        }
+                      >
                         {log.action}
-                      </div>
-
-                      <div className="custody-transfer">
-
-                        <strong>
-                          {log.from_user_name ||
-                            `User ${log.from_user}`}
-                        </strong>
-
-                        <span>→</span>
-
-                        <strong>
-                          {log.to_user_name ||
-                            `User ${log.to_user}`}
-                        </strong>
-
-                      </div>
-
-                      <div className="custody-date">
-                        {new Date(
-                          log.created_at
-                        ).toLocaleString()}
-                      </div>
-
-                      {log.remarks && (
-                        <p className="custody-remarks">
-                          {log.remarks}
-                        </p>
-                      )}
-
+                      </Badge>
                     </div>
 
+                    <div className="dem-timeline-date">
+                      Logged: {new Date(log.created_at).toLocaleString()}
+                    </div>
+
+                    {log.remarks && (
+                      <div className="dem-timeline-remarks">
+                        {log.remarks}
+                      </div>
+                    )}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-                ))}
-
-              </div>
-
-            )}
-
-        </section>
-
-
-        {/* TRANSFER EVIDENCE */}
-
-        <section className="dashboard-section">
-
-          <div className="section-header">
-
+        {/* TRANSFER EVIDENCE FORM CARD */}
+        <Card>
+          <div className="dem-card-header">
             <div>
-              <h2>Transfer Evidence</h2>
-
-              <p>
-                Record the transfer of evidence to another authorized user
+              <h2 className="dem-section-title">Record Custodial Handover</h2>
+              <p className="dem-section-subtitle">
+                Authorize and document transfer of evidence responsibility to another credentialed party.
               </p>
             </div>
-
           </div>
 
-
           <form
-            className="upload-form"
             onSubmit={handleTransfer}
+            style={{ display: "flex", flexDirection: "column", gap: "20px" }}
           >
+            <div className="dem-form-grid-2">
+              <FormField label="Target Evidence Asset">
+                <input
+                  type="text"
+                  value={
+                    selectedEvidence
+                      ? `${selectedEvidence.evidence_number} — ${selectedEvidence.evidence_name}`
+                      : "Please select an evidence asset above first"
+                  }
+                  readOnly
+                  disabled
+                  className="dem-input"
+                />
+              </FormField>
 
-            <div className="form-group">
+              <FormField label="Transfer To (Recipient)" id="to_user" required>
+                <select
+                  id="to_user"
+                  name="to_user"
+                  value={transferForm.to_user}
+                  onChange={handleTransferChange}
+                  required
+                  className="dem-select"
+                >
+                  <option value="7">Forensic Officer — POL2026003</option>
+                  <option value="6">System Administrator — POL2026002</option>
+                </select>
+              </FormField>
 
-              <label>
-                Evidence
-              </label>
-
-              <input
-                type="text"
-                value={
-                  selectedEvidence
-                    ? `${selectedEvidence.evidence_number} — ${selectedEvidence.evidence_name}`
-                    : "Select evidence above"
-                }
-                readOnly
-              />
-
+              <FormField label="Action Taken" id="action" required>
+                <select
+                  id="action"
+                  name="action"
+                  value={transferForm.action}
+                  onChange={handleTransferChange}
+                  required
+                  className="dem-select"
+                >
+                  <option value="TRANSFERRED">TRANSFERRED</option>
+                  <option value="RECEIVED">RECEIVED</option>
+                </select>
+              </FormField>
             </div>
 
-
-            <div className="form-group">
-
-              <label htmlFor="to_user">
-                Transfer To
-              </label>
-
-              <select
-                id="to_user"
-                name="to_user"
-                value={transferForm.to_user}
-                onChange={handleTransferChange}
-                required
-              >
-
-                <option value="7">
-                  Forensic Officer — POL2026003
-                </option>
-
-                <option value="6">
-                  System Administrator — POL2026002
-                </option>
-
-              </select>
-
-            </div>
-
-
-            <div className="form-group">
-
-              <label htmlFor="action">
-                Action
-              </label>
-
-              <select
-                id="action"
-                name="action"
-                value={transferForm.action}
-                onChange={handleTransferChange}
-                required
-              >
-
-                <option value="TRANSFERRED">
-                  TRANSFERRED
-                </option>
-
-                <option value="RECEIVED">
-                  RECEIVED
-                </option>
-
-              </select>
-
-            </div>
-
-
-            <div className="form-group">
-
-              <label htmlFor="remarks">
-                Remarks
-              </label>
-
+            <FormField label="Custodial Transfer Remarks & Handover Notes" id="remarks">
               <textarea
                 id="remarks"
                 name="remarks"
-                rows="4"
-                placeholder="Enter transfer remarks"
+                rows="3"
+                placeholder="Detail reason for transfer, chain condition, transport container seal numbers..."
                 value={transferForm.remarks}
                 onChange={handleTransferChange}
+                className="dem-textarea"
               />
-
-            </div>
-
+            </FormField>
 
             {transferMessage && (
-              <div className="upload-success">
-                ✓ {transferMessage}
+              <div className="dem-alert-banner dem-alert-success">
+                <span>✓</span>
+                <span>{transferMessage}</span>
               </div>
             )}
-
 
             {transferError && (
-              <div className="upload-error">
-                ✕ {transferError}
+              <div className="dem-alert-banner dem-alert-error">
+                <span>✕</span>
+                <span>{transferError}</span>
               </div>
             )}
 
-
-            <div className="upload-actions">
-
-              <button
-                type="button"
-                className="secondary-button"
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setSelectedCustodyEvidence("");
                   setCustodyLogs([]);
@@ -1671,28 +1596,21 @@ const fetchAuditLogs = async () => {
                 }}
               >
                 Clear
-              </button>
+              </Button>
 
-
-              <button
+              <Button
                 type="submit"
-                className="primary-button"
-                disabled={
-                  transferLoading ||
-                  !selectedCustodyEvidence
-                }
+                variant="primary"
+                icon="🔗"
+                disabled={transferLoading || !selectedCustodyEvidence}
+                loading={transferLoading}
               >
-                {transferLoading
-                  ? "Transferring..."
-                  : "🔗 Transfer Evidence"}
-              </button>
-
+                {transferLoading ? "Logging Transfer..." : "Record Custodial Transfer"}
+              </Button>
             </div>
-
           </form>
-
-        </section>
-      </>
+        </Card>
+      </div>
     );
   };
   // ============================================================
