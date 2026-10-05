@@ -96,6 +96,10 @@ CREATE TABLE IF NOT EXISTS tamper_alerts (
     file_path TEXT,
     message TEXT,
     status VARCHAR(20) DEFAULT 'ACTIVE',
+    email_status VARCHAR(20) DEFAULT 'PENDING',
+    email_attempts INTEGER DEFAULT 0,
+    email_last_error TEXT,
+    email_sent_at TIMESTAMP,
     detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     resolved_by INTEGER,
     resolved_at TIMESTAMP,
@@ -104,6 +108,10 @@ CREATE TABLE IF NOT EXISTS tamper_alerts (
     CONSTRAINT fk_alerts_case FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE SET NULL,
     CONSTRAINT fk_alerts_resolved_by FOREIGN KEY (resolved_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_tamper_alerts_unique 
+ON tamper_alerts (evidence_id, alert_type) 
+WHERE status = 'ACTIVE';
 
 -- 8. FORENSIC REPORTS
 CREATE TABLE IF NOT EXISTS forensic_reports (

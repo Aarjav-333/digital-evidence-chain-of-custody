@@ -59,7 +59,8 @@ export default function AlertCenter({ user, onRefresh }) {
           total_alerts: Number(data.data.total_alerts || 0),
           active_alerts: Number(data.data.active_alerts || 0),
           resolved_alerts: Number(data.data.resolved_alerts || 0),
-          critical_active: Number(data.data.critical_active || 0),
+          critical_active: Number(data.data.critical_alerts || 0),
+          unsent_email_alerts: Number(data.data.unsent_email_alerts || 0),
           email_status: data.data.email_status || null
         });
       }
@@ -303,6 +304,29 @@ export default function AlertCenter({ user, onRefresh }) {
         </div>
       )}
 
+      {/* UNSENT ALERT EMAILS WARNING BANNER */}
+      {stats.unsent_email_alerts > 0 && (
+        <div style={{
+          background: "rgba(245, 158, 11, 0.12)",
+          border: "1px solid rgba(245, 158, 11, 0.35)",
+          borderRadius: "8px",
+          padding: "12px 18px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "14px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "18px" }}>⚠️</span>
+            <span style={{ fontSize: "13px", color: "#fbbf24" }}>
+              <strong>Unsent Tamper Notifications:</strong> {stats.unsent_email_alerts} active incident{stats.unsent_email_alerts !== 1 ? "s have" : " has"} pending or failed email alerts. Background scans will automatically retry delivery up to 5 times.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* CRITICAL INCIDENT BANNER */}
       {stats.critical_active > 0 && (
         <div className="tamper-critical-banner">
@@ -456,6 +480,25 @@ export default function AlertCenter({ user, onRefresh }) {
                     {alert.alert_type}
                   </strong>
                   <div style={{ fontSize: "11px", color: "#9ca3af", maxWidth: "160px" }}>{alert.message}</div>
+                  {alert.email_status && (
+                    <div style={{ marginTop: "4px" }}>
+                      {alert.email_status === "SENT" && (
+                        <span className="badge" style={{ background: "#064e3b", color: "#6ee7b7", fontSize: "10px" }} title={"Sent at " + (alert.email_sent_at || "")}>
+                          ✉ Email Sent
+                        </span>
+                      )}
+                      {alert.email_status === "PENDING" && (
+                        <span className="badge" style={{ background: "#78350f", color: "#fde68a", fontSize: "10px" }} title={"Attempts: " + (alert.email_attempts || 0)}>
+                          ✉ Retry Pending ({alert.email_attempts || 0}/5)
+                        </span>
+                      )}
+                      {alert.email_status === "FAILED" && (
+                        <span className="badge" style={{ background: "#7f1d1d", color: "#fca5a5", fontSize: "10px" }} title={alert.email_last_error || "Email delivery failed"}>
+                          ✉ Email Failed ({alert.email_attempts || 0}/5)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </span>
 
                 <span>
@@ -513,6 +556,20 @@ export default function AlertCenter({ user, onRefresh }) {
             <div style={{ marginBottom: "16px", padding: "12px", background: "#11151d", borderRadius: "8px", border: "1px solid #2c3240" }}>
               <div><strong>Evidence:</strong> {resolvingAlert.evidence_number} ({resolvingAlert.file_name})</div>
               <div><strong>Incident Type:</strong> <span style={{ color: "#f87171" }}>{resolvingAlert.alert_type}</span></div>
+              {resolvingAlert.email_status && (
+                <div style={{ marginTop: "4px", fontSize: "12px" }}>
+                  <strong>Email Dispatch:</strong>{" "}
+                  <span style={{ color: resolvingAlert.email_status === "SENT" ? "#6ee7b7" : resolvingAlert.email_status === "FAILED" ? "#f87171" : "#fbbf24" }}>
+                    {resolvingAlert.email_status}
+                  </span>
+                  {" "}(Attempts: {resolvingAlert.email_attempts || 0}/5)
+                  {resolvingAlert.email_last_error && (
+                    <div style={{ color: "#fca5a5", fontSize: "11px", marginTop: "2px" }}>
+                      Error: {resolvingAlert.email_last_error}
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ marginTop: "6px", fontSize: "12px", color: "#d1d5db" }}>{resolvingAlert.message}</div>
             </div>
 

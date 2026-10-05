@@ -304,7 +304,8 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 6. **`audit_logs`**:
    - Fields: `audit_id` (PK), `user_id` (FK -> `users`), `evidence_id` (FK -> `evidence`), `action`, `details`, `created_at`.
 7. **`tamper_alerts`**:
-   - Fields: `alert_id` (PK), `evidence_id` (FK -> `evidence`), `case_id` (FK -> `cases`), `alert_type`, `severity` (DEFAULT 'CRITICAL'), `stored_hash`, `detected_hash`, `file_path`, `message`, `status` ('ACTIVE', 'RESOLVED'), `detected_at`, `resolved_by` (FK -> `users`), `resolved_at`, `resolution_notes`.
+   - Fields: `alert_id` (PK), `evidence_id` (FK -> `evidence`), `case_id` (FK -> `cases`), `alert_type`, `severity` (DEFAULT 'CRITICAL'), `stored_hash`, `detected_hash`, `file_path`, `message`, `status` ('ACTIVE', 'RESOLVED'), `detected_at`, `resolved_by` (FK -> `users`), `resolved_at`, `resolution_notes`, `email_status` ('PENDING', 'SENT', 'FAILED'), `email_attempts` (INT DEFAULT 0), `email_last_error` (TEXT), `email_sent_at` (TIMESTAMP WITH TIME ZONE).
+   - Constraints & Indexes: Partial unique index `idx_active_tamper_alerts_unique ON tamper_alerts (evidence_id, alert_type) WHERE status = 'ACTIVE'`.
 8. **`forensic_reports`**:
    - Fields: `report_id` (PK), `report_number` (UNIQUE), `case_id` (FK -> `cases`), `evidence_id` (FK -> `evidence`), `analyst_id` (FK -> `users`), `report_title`, `report_type`, `tools_used`, `hash_verified`, `findings`, `artifacts_recovered`, `conclusion`, `status`, `recipient_id` (FK -> `users`), `recipient_name`, `recipient_agency`, `transmission_priority`, `dispatch_notes`, `sent_at`, `created_at`.
 9. **`autopsy_records`**:
@@ -328,10 +329,22 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
    - Authorized roles (Admin and Forensic Analyst) initiate decryption.
    - The wrapped key is decrypted using `MASTER_ENCRYPTION_KEY`.
    - The AES-256-GCM decipher stream verifies the authentication tag. If the ciphertext or tag has been tampered with, decryption fails immediately.
-4. **Autonomous Tamper Detection**:
-   - `integrityScheduler.js` executes every 60 seconds.
-   - Calls `alertService.scanAllEvidenceIntegrity()`, which checks file existence, decrypts each item to verify the GCM authentication tag, and re-computes the SHA-256 digest.
-   - Any discrepancy triggers a `CRITICAL` alert entry in `tamper_alerts` and dispatches an immediate email via Nodemailer.
+4. **Autonomous Tamper Detection & Hardened Integrity Monitor**:
+   - `integrityScheduler.js` executes periodically, configured by `INTEGRITY_SCAN_MINUTES` (defaults to 60s).
+   - In-memory `isScanRunning` mutex guard guarantees that scheduled scans and manual triggers (`/api/alerts/run-check`) never run concurrently.
+   - Uses memory-efficient streaming SHA-256 computation and streaming AES-256-GCM decryption/verification via `crypto.createDecipheriv` (zero full-file buffering in memory).
+   - Distinct error categorization:
+     - `CORRUPTED_CIPHERTEXT`: Raised when AES-GCM authentication tag check fails on `.enc` payload tampering.
+     - `KEY_UNWRAP_FAILED`: Raised on master key decipherment failures (logged as a single `SYSTEM_WARNING` audit event; does NOT create misleading individual tamper alerts).
+     - `SCAN_ERROR`: Raised with duplicate suppression on unexpected scan exceptions.
+   - Deduplication & Race Protection: Postgres partial unique index `(evidence_id, alert_type) WHERE status = 'ACTIVE'` catches race conditions at database level with graceful duplicate suppression (`already_exists: true`).
+   - Email Dispatch & Retry Mechanism:
+     - Creates 1 direct email notification if exactly 1 alert is newly created, or a unified HTML digest email if > 1 alerts are newly created in a scan.
+     - Dynamic values are strictly HTML-escaped to prevent injection.
+     - Tracks `email_status` (`PENDING`, `SENT`, `FAILED`), `email_attempts` (max 5), `email_sent_at`, and `email_last_error`.
+     - Scans automatically retry unsent/failed alert emails up to 5 attempts, logging immutable `EMAIL_ALERT_SENT` and `EMAIL_ALERT_FAILED` entries to `audit_logs`.
+     - Alert Center displays an active warning banner whenever unsent alert notifications exist, along with status badges (`SENT`, `PENDING`, `FAILED`) on each alert row.
+   - Clear `SYSTEM` actor attribution: Automated scan and retry audit events record `user_id = null`, rendered cleanly as `SYSTEM` in audit logs.
 5. **Non-Repudiation Audit Trail**:
    - Every read, write, decrypt, verify, and transfer action writes an immutable record to `audit_logs` containing user ID, evidence reference, timestamp, and metadata.
 
@@ -433,6 +446,18 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 
 ## 9. Changelog
 
+- **2026-10-06**:
+  - **Integrity Monitor Hardening & Email Dispatch Telemetry**:
+    - Applied schema migration `database/migrations/20261006_harden_tamper_alerts.sql` and updated `database/schema.sql` adding `email_status`, `email_attempts`, `email_last_error`, `email_sent_at` and partial unique index `idx_active_tamper_alerts_unique` on `tamper_alerts (evidence_id, alert_type) WHERE status = 'ACTIVE'`.
+    - Updated `backend/src/models/alertModel.js` with error code `23505` (`unique_violation`) deduplication handling, email telemetry update method (`updateAlertEmailDispatch`), and `getUnsentActiveAlerts(5)` retrieval.
+    - Replaced `fs.readFileSync` in `backend/src/services/alertService.js` with memory-safe streaming hashing (`streamComputeFileSha256`) and streaming AES-GCM verification (`streamDecryptAndHash`).
+    - Separated master key unwrapping failures (`KEY_UNWRAP_FAILED`: single system warning, 0 per-record alerts) from ciphertext corruption (`CORRUPTED_CIPHERTEXT`).
+    - Implemented batch alert digest emailing (`sendTamperAlertDigestEmail`) for multi-incident scans and HTML-escaped all dynamic values in email templates (`backend/src/services/emailService.js`).
+    - Added `isScanRunning` mutex guard in `alertService.js` and `integrityScheduler.js` preventing overlapping scheduled and manual scans.
+    - Implemented automatic retry loop in `alertService.js` for failed/pending alert emails up to 5 attempts, with per-attempt audit logging (`EMAIL_ALERT_SENT`, `EMAIL_ALERT_FAILED`).
+    - Added unsent email warning banner and email dispatch status badges (`SENT`, `PENDING`, `FAILED`) to `AlertCenter.jsx`.
+    - Formatted automated audit events with clear `SYSTEM` actor name in `auditModel.js` and `auditService.js`.
+    - Built automated verification suite (`scratch/test_monitor_hardening.js`) verifying all 3 requirements: 1) single alert and single email across 3 scans, 2) forced SMTP failure retrying and recovering to `SENT`, 3) concurrent scans blocked by mutex guard creating exactly 1 alert.
 - **2026-10-05**:
   - **`is_legacy_seed` Schema Migration & Description Exemption Removal**: Added `is_legacy_seed BOOLEAN DEFAULT FALSE` column to `evidence` table (`database/migrations/20261005_add_is_legacy_seed.sql`, `database/schema.sql`). Flagged verified seed exhibits (`evidence_id <= 3` with `encrypted_aes_key = 'temporary_key'`) with `is_legacy_seed = TRUE`. Restored original exhibit descriptions for records 1–3 (`"Camera footage from the bank entrance."`). Completely eliminated description string parsing from `backend/src/services/alertService.js`, strictly checking the boolean database flag. Verified via automated test script that regular exhibits with `"[LEGACY SEED"` in their description and missing disk files properly raise `CRITICAL` `FILE_MISSING` alerts.
   - **Vault Integrity Audit (20 Scanned Records, 2 Compromised)**: Audited all 20 records in the database. Discovered the history behind the 20 records (3 catalog seeds, 3 legacy images, 5 development uploads from August/September, 1 test data exhibit, and 8 records created in pairs during repeated verification tests of the forensic upload and report generator). Identified the 2 compromised records (`EV-2026-004` and `EV-2026-005`) as legacy unencrypted records from August 7 that were seeded with placeholder `temporary_hash` values, resulting in `HASH_MISMATCH` against their disk file hash `9690cbefa96b7263...` (records preserved without automatic resolution).

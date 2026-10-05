@@ -39,8 +39,8 @@ const getAuditLogs = async (evidenceId) => {
             a.audit_id,
             a.evidence_id,
             a.user_id,
-            u.full_name AS user_name,
-            u.employee_id,
+            COALESCE(u.full_name, 'SYSTEM') AS user_name,
+            COALESCE(u.employee_id, 'SYSTEM') AS employee_id,
             a.action,
             a.details,
             a.created_at

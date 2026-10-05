@@ -13,6 +13,10 @@ const getAllAlerts = async () => {
             a.file_path,
             a.message,
             a.status,
+            a.email_status,
+            a.email_attempts,
+            a.email_last_error,
+            a.email_sent_at,
             a.detected_at,
             a.resolved_by,
             a.resolved_at,
@@ -42,7 +46,8 @@ const getAlertStats = async () => {
             COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_alerts,
             COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved_alerts,
             COUNT(*) FILTER (WHERE severity = 'CRITICAL' AND status = 'ACTIVE')::int AS critical_alerts,
-            COUNT(*) FILTER (WHERE severity = 'HIGH' AND status = 'ACTIVE')::int AS high_alerts
+            COUNT(*) FILTER (WHERE severity = 'HIGH' AND status = 'ACTIVE')::int AS high_alerts,
+            COUNT(*) FILTER (WHERE status = 'ACTIVE' AND email_status IN ('PENDING', 'FAILED'))::int AS unsent_email_alerts
         FROM tamper_alerts;
     `;
     const result = await pool.query(query);
@@ -61,9 +66,13 @@ const createAlert = async (alertData) => {
             detected_hash,
             file_path,
             message,
-            status
+            status,
+            email_status,
+            email_attempts,
+            email_last_error,
+            email_sent_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, $10, $11, $12)
         RETURNING *;
     `;
     const values = [
@@ -74,21 +83,89 @@ const createAlert = async (alertData) => {
         alertData.stored_hash,
         alertData.detected_hash,
         alertData.file_path,
-        alertData.message
+        alertData.message,
+        alertData.email_status || 'PENDING',
+        alertData.email_attempts || 0,
+        alertData.email_last_error || null,
+        alertData.email_sent_at || null
     ];
-    const result = await pool.query(query, values);
-    return result.rows[0];
+    try {
+        const result = await pool.query(query, values);
+        return { ...result.rows[0], is_new: true };
+    } catch (err) {
+        // Unique violation (Postgres error 23505): partial unique index idx_active_tamper_alerts_unique
+        if (err.code === "23505") {
+            const existing = await findActiveAlert(alertData.evidence_id, alertData.alert_type);
+            return existing ? { ...existing, is_new: false, already_exists: true } : null;
+        }
+        throw err;
+    }
 };
 
 const findActiveAlert = async (evidenceId, alertType) => {
     const query = `
-        SELECT alert_id 
+        SELECT 
+            alert_id,
+            evidence_id,
+            case_id,
+            alert_type,
+            severity,
+            stored_hash,
+            detected_hash,
+            file_path,
+            message,
+            status,
+            email_status,
+            email_attempts,
+            email_last_error,
+            email_sent_at,
+            detected_at
         FROM tamper_alerts 
         WHERE evidence_id = $1 AND alert_type = $2 AND status = 'ACTIVE'
         LIMIT 1;
     `;
     const result = await pool.query(query, [evidenceId, alertType]);
     return result.rows[0];
+};
+
+const updateAlertEmailDispatch = async (alertId, { email_status, email_attempts, email_last_error, email_sent_at }) => {
+    const query = `
+        UPDATE tamper_alerts
+        SET email_status = COALESCE($2, email_status),
+            email_attempts = COALESCE($3, email_attempts),
+            email_last_error = $4,
+            email_sent_at = COALESCE($5, email_sent_at)
+        WHERE alert_id = $1
+        RETURNING *;
+    `;
+    const values = [
+        alertId,
+        email_status,
+        email_attempts,
+        email_last_error,
+        email_sent_at
+    ];
+    const result = await pool.query(query, values);
+    return result.rows[0];
+};
+
+const getUnsentActiveAlerts = async (maxAttempts = 5) => {
+    const query = `
+        SELECT 
+            a.*,
+            e.evidence_number,
+            e.evidence_name,
+            c.case_number
+        FROM tamper_alerts a
+        LEFT JOIN evidence e ON a.evidence_id = e.evidence_id
+        LEFT JOIN cases c ON a.case_id = c.case_id
+        WHERE a.status = 'ACTIVE' 
+          AND a.email_status IN ('PENDING', 'FAILED')
+          AND (a.email_attempts IS NULL OR a.email_attempts < $1)
+        ORDER BY a.alert_id ASC;
+    `;
+    const result = await pool.query(query, [maxAttempts]);
+    return result.rows;
 };
 
 const resolveAlert = async (alertId, userId, notes) => {
@@ -110,5 +187,7 @@ module.exports = {
     getAlertStats,
     createAlert,
     findActiveAlert,
+    updateAlertEmailDispatch,
+    getUnsentActiveAlerts,
     resolveAlert
 };

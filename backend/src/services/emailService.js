@@ -6,6 +6,19 @@ const pool = require("../config/db");
 const auditService = require("./auditService");
 
 /**
+ * Escapes dynamic string values to prevent HTML injection in emails.
+ */
+const escapeHtml = (unsafe) => {
+    if (unsafe === null || unsafe === undefined) return "";
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+};
+
+/**
  * Dynamically reloads backend/.env so edits to credentials reflect immediately without process restart.
  */
 const refreshEnv = () => {
@@ -140,7 +153,7 @@ const getEmailConfigurationStatus = () => {
 };
 
 /**
- * Dispatches a high-priority tamper alert notification email to the System Administrator.
+ * Dispatches a single high-priority tamper alert notification email to the System Administrator.
  *
  * @param {Object} alertDetails Details of the newly created tamper alert
  * @param {Object} options Optional overrides (e.g. forceEthereal)
@@ -173,14 +186,12 @@ const sendTamperAlertEmail = async (alertDetails, options = {}) => {
                 `[EmailService] SMTP email notifications are not configured (SMTP_HOST, SMTP_USER, or SMTP_PASS missing) and DEMO_MAIL is not set. Email alert suppressed for exhibit ${evidence_number || evidence_id}.`
             );
 
-            // Record a SYSTEM_WARNING in audit_logs so the administrative record shows why email was not dispatched
             try {
-                const adminId = audit_user_id || 6;
                 await auditService.createAuditLog(
-                    adminId,
+                    audit_user_id || null,
                     evidence_id || null,
                     "SYSTEM_WARNING",
-                    `Email alerts are not configured: SMTP credentials missing in environment variables. Evidence tamper alert was not emailed for exhibit ${evidence_number || evidence_id || "N/A"}.`
+                    `[SYSTEM] Email alerts unconfigured: SMTP credentials missing in environment variables. Evidence tamper alert was not emailed for exhibit ${evidence_number || evidence_id || "N/A"}.`
                 );
             } catch (auditErr) {
                 console.warn("[EmailService] Failed to record SYSTEM_WARNING audit log:", auditErr.message);
@@ -204,7 +215,7 @@ const sendTamperAlertEmail = async (alertDetails, options = {}) => {
             ? new Date(detected_at).toLocaleString("en-US", { timeZone: "UTC", dateStyle: "full", timeStyle: "long" }) + " (UTC)"
             : new Date().toISOString() + " (UTC)";
 
-        const subject = "[DIG_EVI] CRITICAL DIGITAL EVIDENCE INTEGRITY ALERT";
+        const subject = `[DIG_EVI] CRITICAL DIGITAL EVIDENCE INTEGRITY ALERT — ${evidence_number || "Exhibit"}`;
 
         const textContent = `
 ================================================================================
@@ -276,20 +287,20 @@ Sentinel Background Automated Integrity Monitor
         A critical digital evidence integrity anomaly was detected by the automated cryptographic background monitoring system. Immediate administrative attention is recommended.
       </p>
       <div class="alert-card">
-        FAILURE CLASSIFICATION: ${alert_type || "TAMPER_DETECTED"} (${severity || "CRITICAL"})
+        FAILURE CLASSIFICATION: ${escapeHtml(alert_type || "TAMPER_DETECTED")} (${escapeHtml(severity || "CRITICAL")})
       </div>
       <table>
-        <tr><th>Alert Reference</th><td>#${alert_id || "NEW"}</td></tr>
-        <tr><th>Case ID</th><td>Case ID ${case_id || "N/A"}${case_number ? ` (${case_number})` : ""}</td></tr>
-        <tr><th>Evidence ID</th><td>${evidence_id || "N/A"}</td></tr>
-        <tr><th>Evidence Number</th><td class="mono"><strong>${evidence_number || "N/A"}</strong></td></tr>
-        <tr><th>Evidence Name</th><td>${evidence_name || "N/A"}</td></tr>
-        <tr><th>Integrity Failure</th><td style="color: #b91c1c; font-weight: bold;">${alert_type || "TAMPER_DETECTED"}</td></tr>
-        <tr><th>Detection Timestamp</th><td>${detectionTime}</td></tr>
-        <tr><th>Stored SHA-256 Hash</th><td class="mono">${stored_hash || "Not Available"}</td></tr>
-        <tr><th>Detected SHA-256 Hash</th><td class="mono">${detected_hash || "Not Available"}</td></tr>
-        <tr><th>Storage Path</th><td class="mono">${file_path || "N/A"}</td></tr>
-        <tr><th>Diagnostic Detail</th><td>${message || "Evidence integrity verification failed."}</td></tr>
+        <tr><th>Alert Reference</th><td>#${escapeHtml(alert_id || "NEW")}</td></tr>
+        <tr><th>Case ID</th><td>Case ID ${escapeHtml(case_id || "N/A")}${case_number ? ` (${escapeHtml(case_number)})` : ""}</td></tr>
+        <tr><th>Evidence ID</th><td>${escapeHtml(evidence_id || "N/A")}</td></tr>
+        <tr><th>Evidence Number</th><td class="mono"><strong>${escapeHtml(evidence_number || "N/A")}</strong></td></tr>
+        <tr><th>Evidence Name</th><td>${escapeHtml(evidence_name || "N/A")}</td></tr>
+        <tr><th>Integrity Failure</th><td style="color: #b91c1c; font-weight: bold;">${escapeHtml(alert_type || "TAMPER_DETECTED")}</td></tr>
+        <tr><th>Detection Timestamp</th><td>${escapeHtml(detectionTime)}</td></tr>
+        <tr><th>Stored SHA-256 Hash</th><td class="mono">${escapeHtml(stored_hash || "Not Available")}</td></tr>
+        <tr><th>Detected SHA-256 Hash</th><td class="mono">${escapeHtml(detected_hash || "Not Available")}</td></tr>
+        <tr><th>Storage Path</th><td class="mono">${escapeHtml(file_path || "N/A")}</td></tr>
+        <tr><th>Diagnostic Detail</th><td>${escapeHtml(message || "Evidence integrity verification failed.")}</td></tr>
       </table>
       <div class="cta-box">
         <strong>ACTION REQUIRED:</strong> Please log in to the DIG_EVI system, open the <strong>Alert Center</strong> dashboard, inspect the evidence exhibits and chain of custody logs, and follow the standard evidence compromise response protocols.
@@ -330,6 +341,164 @@ Sentinel Background Automated Integrity Monitor
         };
     } catch (err) {
         console.error("[EmailService] Failed to send tamper alert email (non-fatal):", err.message);
+        return {
+            sent: false,
+            error: err.message
+        };
+    }
+};
+
+/**
+ * Sends a single digest email summarizing several newly created alerts in one scan.
+ * HTML escapes all dynamic values.
+ *
+ * @param {Array<Object>} alerts Array of alert objects
+ * @param {Object} options Optional settings
+ * @returns {Promise<Object>}
+ */
+const sendTamperAlertDigestEmail = async (alerts, options = {}) => {
+    try {
+        if (!Array.isArray(alerts) || alerts.length === 0) {
+            return { sent: false, reason: "NO_ALERTS" };
+        }
+
+        const forceEthereal = Boolean(options.useEthereal);
+        const { transporter, isEthereal } = await getTransporter(forceEthereal);
+
+        if (!transporter) {
+            console.error(`[EmailService] SMTP email notifications unconfigured. Suppressing digest email for ${alerts.length} exhibits.`);
+            return { sent: false, reason: "SMTP_NOT_CONFIGURED" };
+        }
+
+        const recipient = (await resolveRecipientEmail()) || (isEthereal ? "admin.sentinel@dig-evi.local" : null);
+        if (!recipient) {
+            return { sent: false, reason: "NO_RECIPIENT_EMAIL" };
+        }
+
+        const subject = `[DIG_EVI DIGEST] CRITICAL: ${alerts.length} Digital Evidence Integrity Anomalies Detected`;
+        const scanTime = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "full", timeStyle: "long" }) + " (UTC)";
+
+        const textTable = alerts.map((a, idx) => {
+            return `[#${idx + 1}] Alert #${a.alert_id || "NEW"} | Exhibit: ${a.evidence_number || a.evidence_id} (${a.evidence_name || "N/A"})
+    Anomaly Type:  ${a.alert_type} | Severity: ${a.severity || "CRITICAL"}
+    Stored Hash:   ${a.stored_hash || "N/A"}
+    Detected Hash: ${a.detected_hash || "N/A"}
+    Message:       ${a.message || "Failed integrity verification"}`;
+        }).join("\n\n");
+
+        const textContent = `
+================================================================================
+DIG_EVI DIGITAL EVIDENCE MANAGEMENT SYSTEM — INTEGRITY ALERT DIGEST
+================================================================================
+ATTENTION: System Administrator
+
+A cryptographic vault integrity scan detected ${alerts.length} evidence anomalies.
+Scan Timestamp: ${scanTime}
+
+INCIDENT SUMMARY:
+--------------------------------------------------------------------------------
+${textTable}
+
+--------------------------------------------------------------------------------
+ACTION REQUIRED:
+Please open the DIG_EVI Alert Center immediately to review these incidents,
+inspect chain of custody logs, and follow standard forensic response protocols.
+================================================================================
+`.trim();
+
+        const rowsHtml = alerts.map(a => `
+          <tr>
+            <td class="mono">#${escapeHtml(a.alert_id || "NEW")}</td>
+            <td class="mono"><strong>${escapeHtml(a.evidence_number || "N/A")}</strong></td>
+            <td>${escapeHtml(a.evidence_name || "N/A")}</td>
+            <td style="color: #b91c1c; font-weight: bold;">${escapeHtml(a.alert_type)}</td>
+            <td>${escapeHtml(a.severity || "CRITICAL")}</td>
+            <td style="font-size: 11.5px; color: #475569;">${escapeHtml(a.message || "Failed integrity check")}</td>
+          </tr>
+        `).join("");
+
+        const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }
+    .container { max-width: 750px; margin: 0 auto; background: #ffffff; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .header { background: #b91c1c; color: #ffffff; padding: 20px 24px; }
+    .header h1 { margin: 0; font-size: 19px; font-weight: 700; }
+    .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.92; }
+    .body { padding: 24px; }
+    .alert-card { background: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid #dc2626; padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; font-weight: bold; color: #991b1b; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f8fafc; color: #475569; font-weight: 600; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .cta-box { background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 4px; font-size: 13px; color: #92400e; margin-bottom: 20px; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 24px; font-size: 11px; color: #64748b; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚨 CRITICAL INTEGRITY SCAN DIGEST (${escapeHtml(alerts.length)} ANOMALIES)</h1>
+      <p>DIG_EVI Digital Evidence Chain of Custody &amp; Management System</p>
+    </div>
+    <div class="body">
+      <div class="alert-card">
+        ANOMALIES DETECTED: ${escapeHtml(alerts.length)} evidence exhibit(s) failed cryptographic integrity verification during scheduled scan.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Evidence #</th>
+            <th>Exhibit Name</th>
+            <th>Anomaly Type</th>
+            <th>Severity</th>
+            <th>Diagnostic Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+      <div class="cta-box">
+        <strong>ACTION REQUIRED:</strong> Please log in to the DIG_EVI Alert Center to review these incidents, inspect chain of custody logs, and follow standard evidence compromise response protocols.
+      </div>
+    </div>
+    <div class="footer">
+      Automated Digest Notification &bull; DIG_EVI Sentinel Integrity Monitor &bull; Scan Time: ${escapeHtml(scanTime)}
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+        const fromAddress = process.env.SMTP_FROM || `"DIG_EVI Sentinel Alert" <${process.env.SMTP_USER || "sentinel@dig-evi.local"}>`;
+        const sendResult = await transporter.sendMail({
+            from: fromAddress,
+            to: recipient,
+            subject: subject,
+            text: textContent,
+            html: htmlContent
+        });
+
+        const previewUrl = isEthereal ? nodemailer.getTestMessageUrl(sendResult) : null;
+        console.log(`[EmailService] Tamper digest email sent for ${alerts.length} exhibits to ${maskEmail(recipient)} (Message ID: ${sendResult.messageId})`);
+
+        return {
+            sent: true,
+            messageId: sendResult.messageId,
+            recipient: recipient,
+            previewUrl: previewUrl,
+            subject: subject,
+            text: textContent,
+            isDigest: true,
+            count: alerts.length
+        };
+    } catch (err) {
+        console.error("[EmailService] Failed to send digest email:", err.message);
         return {
             sent: false,
             error: err.message
@@ -388,7 +557,7 @@ const sendTestEmail = async (requestedByUserId) => {
                     <div style="max-width: 500px; margin: 0 auto; background: white; padding: 24px; border-radius: 8px; border: 1px solid #e2e8f0;">
                         <h3 style="color: #4f46e5; margin-top: 0;">🛡️ DIG_EVI Mail Dispatch Test</h3>
                         <p style="font-size: 14px; color: #334155;">This is an administrative test notification confirming that the DIG_EVI SMTP dispatch channel is operational.</p>
-                        <p style="font-size: 12px; color: #64748b;">Timestamp: ${testTimestamp}</p>
+                        <p style="font-size: 12px; color: #64748b;">Timestamp: ${escapeHtml(testTimestamp)}</p>
                     </div>
                 </div>
             `
@@ -488,8 +657,10 @@ module.exports = {
     getTransporter,
     resolveRecipientEmail,
     maskEmail,
+    escapeHtml,
     getEmailConfigurationStatus,
     sendTamperAlertEmail,
+    sendTamperAlertDigestEmail,
     sendTestEmail,
     verifySmtpConnection
 };
