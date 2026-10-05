@@ -1,11 +1,27 @@
+const fs = require("fs");
+const path = require("path");
+const dotenv = require("dotenv");
 const nodemailer = require("nodemailer");
 const pool = require("../config/db");
 const auditService = require("./auditService");
 
 /**
+ * Dynamically reloads backend/.env so edits to credentials reflect immediately without process restart.
+ */
+const refreshEnv = () => {
+    try {
+        const envPath = path.resolve(__dirname, "../../.env");
+        if (fs.existsSync(envPath)) {
+            dotenv.config({ path: envPath, override: true });
+        }
+    } catch (_) {}
+};
+
+/**
  * Checks whether SMTP environment variables are properly populated.
  */
 const isSmtpConfigured = () => {
+    refreshEnv();
     const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
     return Boolean(
         SMTP_HOST && SMTP_HOST.trim() &&
@@ -23,6 +39,7 @@ let cachedEtherealTransporter = null;
  * Ethereal fallback is ONLY activated when DEMO_MAIL=true or explicitly requested for testing.
  */
 const getTransporter = async (forceEthereal = false) => {
+    refreshEnv();
     if (isSmtpConfigured() && !forceEthereal) {
         const currentKey = `${process.env.SMTP_HOST}:${process.env.SMTP_PORT}:${process.env.SMTP_USER}:${process.env.SMTP_PASS}`;
         if (!cachedTransporter || cachedTransporterKey !== currentKey) {
