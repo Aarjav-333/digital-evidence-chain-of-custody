@@ -941,3 +941,48 @@ body {
   font-family: var(--font-mono);
 }
 
+/* Modern Boxed Table */
+.dem-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: #131620;
+}
+
+.dem-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.dem-table th {
+  background: #141721;
+  color: var(--color-label);
+  font-size: var(--font-label);
+  font-weight: var(--weight-label);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.dem-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  vertical-align: middle;
+  transition: background var(--transition-fast);
+}
+
+.dem-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dem-table tbody tr:hover td {
+  background: var(--bg-card-hover);
+}
+
+

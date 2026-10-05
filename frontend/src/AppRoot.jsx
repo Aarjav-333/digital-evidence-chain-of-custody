@@ -1834,184 +1834,211 @@ const renderAuditPage = () => {
 
 const renderCasesPage = () => {
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <h1>Cases</h1>
-          <p>
-            Manage investigations and their associated evidence
-          </p>
-        </div>
+    <div className="dem-page-container">
+      {/* Page Header */}
+      <PageHeader
+        title="Investigation Cases"
+        subtitle="Manage official case investigations, track assigned officers, and inspect evidence registries."
+        user={user}
+      />
 
-        <div className="user-info">
-          <strong>{user?.full_name}</strong>
-          <span>{user?.employee_id}</span>
-        </div>
-      </header>
-
-      {/* CREATE CASE */}
-      <section className="dashboard-section">
-        <div className="section-header">
+      {/* CREATE CASE CARD */}
+      <Card>
+        <div className="dem-card-header">
           <div>
-            <h2>Create New Case</h2>
-            <p>
-              Create an investigation before adding evidence
+            <h2 className="dem-section-title">Open New Investigation Case</h2>
+            <p className="dem-section-subtitle">
+              Register a unique case portfolio before attaching cryptographic digital evidence.
             </p>
           </div>
         </div>
 
         <form
-          className="upload-form"
           onSubmit={handleCreateCase}
+          style={{ display: "flex", flexDirection: "column", gap: "20px" }}
         >
-          <div className="form-group">
-            <label htmlFor="case_title">
-              Case Title
-            </label>
-
-            <input
+          <div className="dem-form-grid-2">
+            <FormField
+              label="Case Title"
               id="case_title"
-              name="case_title"
-              type="text"
-              placeholder="Enter case title"
-              value={caseForm.case_title}
-              onChange={handleCaseChange}
               required
-            />
+            >
+              <input
+                id="case_title"
+                name="case_title"
+                type="text"
+                placeholder="e.g. Operation Nightfall Cyber Extortion"
+                value={caseForm.case_title}
+                onChange={handleCaseChange}
+                required
+                className="dem-input"
+              />
+            </FormField>
+
+            <FormField
+              label="Investigating Officer (User ID)"
+              id="investigating_officer"
+              required
+            >
+              <input
+                id="investigating_officer"
+                name="investigating_officer"
+                type="number"
+                placeholder="e.g. 2"
+                value={caseForm.investigating_officer}
+                onChange={handleCaseChange}
+                required
+                className="dem-input"
+              />
+            </FormField>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="case_description">
-              Case Description
-            </label>
-
+          <FormField
+            label="Case Synopsis & Description"
+            id="case_description"
+            required
+          >
             <textarea
               id="case_description"
               name="case_description"
-              placeholder="Describe the investigation"
+              placeholder="Outline the incident details, relevant statutory penal codes, and scope of investigation..."
               value={caseForm.case_description}
               onChange={handleCaseChange}
               required
+              rows="4"
+              className="dem-textarea"
             />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="investigating_officer">
-              Investigating Officer
-            </label>
-
-            <input
-              id="investigating_officer"
-              name="investigating_officer"
-              type="number"
-              placeholder="Enter officer user ID"
-              value={caseForm.investigating_officer}
-              onChange={handleCaseChange}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={caseCreateLoading}
-          >
-            {caseCreateLoading
-              ? "Creating..."
-              : "Create Case"}
-          </button>
+          </FormField>
 
           {caseMessage && (
-            <div className="success-message">
-              {caseMessage}
+            <div className="dem-alert-banner dem-alert-success">
+              <span>✓</span>
+              <span>{caseMessage}</span>
             </div>
           )}
 
           {caseError && (
-            <div className="error-message">
-              {caseError}
+            <div className="dem-alert-banner dem-alert-error">
+              <span>✕</span>
+              <span>{caseError}</span>
             </div>
           )}
-        </form>
-      </section>
 
-      {/* EXISTING CASES */}
-      <section className="dashboard-section   cases-section">
-        <div className="section-header">
+          <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+            <Button
+              type="submit"
+              variant="primary"
+              icon="📁"
+              loading={caseCreateLoading}
+            >
+              {caseCreateLoading ? "Creating Investigation..." : "Create Investigation Case"}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* EXISTING CASES SECTION */}
+      <div>
+        <div className="dem-section-header">
           <div>
-            <h2>Existing Cases</h2>
-            <p>
-              {cases.length} case
-              {cases.length !== 1 ? "s" : ""}
+            <h2 className="dem-section-title">Active Case Registries</h2>
+            <p className="dem-section-subtitle">
+              {cases.length} investigation record{cases.length !== 1 ? "s" : ""} on file
             </p>
           </div>
 
-          <button
-            className="primary-button"
+          <Button
+            variant="outline"
+            icon="↻"
             onClick={fetchCases}
+            disabled={casesLoading}
           >
-            ↻ Refresh
-          </button>
+            {casesLoading ? "Refreshing..." : "Refresh"}
+          </Button>
         </div>
 
         {casesLoading && (
-          <div className="evidence-page-message">
-            Loading cases...
-          </div>
+          <Card>
+            <div style={{ textAlign: "center", padding: "32px", color: "var(--text-secondary)" }}>
+              <span className="dem-btn-spinner" style={{ display: "inline-block", marginBottom: "12px", width: "24px", height: "24px", borderColor: "rgba(139, 92, 246, 0.3)", borderTopColor: "var(--accent)" }} />
+              <div>Loading investigation cases...</div>
+            </div>
+          </Card>
         )}
 
         {!casesLoading && cases.length === 0 && (
-          <div className="evidence-page-message">
-            No cases found.
-          </div>
+          <EmptyState
+            icon="📁"
+            title="No Investigation Cases Found"
+            message="No cases have been opened in the system yet. Use the form above to initialize the first case."
+          />
         )}
 
         {!casesLoading && cases.length > 0 && (
-          <div className="evidence-table">
-
-            <div className="table-header">
-              <span>Case Number</span>
-              <span>Case Title</span>
-              <span>Officer</span>
-              <span>Status</span>
-              <span>Created</span>
+          <Card style={{ padding: "0", overflow: "hidden" }}>
+            <div className="dem-table-container" style={{ border: "none" }}>
+              <table className="dem-table">
+                <thead>
+                  <tr>
+                    <th>Case Number</th>
+                    <th>Case Title</th>
+                    <th>Lead Officer</th>
+                    <th>Status</th>
+                    <th>Registered At</th>
+                    <th style={{ textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cases.map((item) => (
+                    <tr key={item.case_id}>
+                      <td>
+                        <span className="dem-evidence-id-badge">
+                          {item.case_number}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        {item.case_title}
+                      </td>
+                      <td style={{ color: "var(--text-secondary)" }}>
+                        User {item.investigating_officer}
+                      </td>
+                      <td>
+                        <Badge
+                          variant={
+                            item.status === "ACTIVE" || item.status === "OPEN"
+                              ? "valid"
+                              : item.status === "CLOSED"
+                              ? "default"
+                              : "accent"
+                          }
+                        >
+                          {item.status || "ACTIVE"}
+                        </Badge>
+                      </td>
+                      <td style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                        {new Date(item.created_at).toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCaseId(item.case_id);
+                            setCurrentPage("evidence");
+                          }}
+                        >
+                          View Vault ➔
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            {cases.map((item) => (
-              <div
-                className="table-row"
-                key={item.case_id}
-              >
-                <span>
-                  <strong>
-                    {item.case_number}
-                  </strong>
-                </span>
-
-                <span>
-                  {item.case_title}
-                </span>
-
-                <span>
-                  User {item.investigating_officer}
-                </span>
-
-                <span>
-                  {item.status}
-                </span>
-
-                <span>
-                  {new Date(
-                    item.created_at
-                  ).toLocaleString()}
-                </span>
-              </div>
-            ))}
-
-          </div>
+          </Card>
         )}
-      </section>
-    </>
+      </div>
+    </div>
   );
 };
 
