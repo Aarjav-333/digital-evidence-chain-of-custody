@@ -15,6 +15,7 @@ const isSmtpConfigured = () => {
 };
 
 let cachedTransporter = null;
+let cachedTransporterKey = null;
 let cachedEtherealTransporter = null;
 
 /**
@@ -23,7 +24,8 @@ let cachedEtherealTransporter = null;
  */
 const getTransporter = async (forceEthereal = false) => {
     if (isSmtpConfigured() && !forceEthereal) {
-        if (!cachedTransporter) {
+        const currentKey = `${process.env.SMTP_HOST}:${process.env.SMTP_PORT}:${process.env.SMTP_USER}:${process.env.SMTP_PASS}`;
+        if (!cachedTransporter || cachedTransporterKey !== currentKey) {
             const port = parseInt(process.env.SMTP_PORT, 10) || 587;
             const isSecure = port === 465;
 
@@ -39,6 +41,7 @@ const getTransporter = async (forceEthereal = false) => {
                 greetingTimeout: 10000,
                 socketTimeout: 15000
             });
+            cachedTransporterKey = currentKey;
         }
         return { transporter: cachedTransporter, isEthereal: false };
     }
@@ -408,6 +411,10 @@ const sendTestEmail = async (requestedByUserId) => {
             safeError = safeError.split(process.env.JWT_SECRET.trim()).join("[REDACTED]");
         }
 
+        if (safeError.includes("535") || safeError.includes("BadCredentials") || safeError.includes("Username and Password not accepted")) {
+            safeError += " — Note for Gmail: Google requires a 16-character App Password (not your normal account password). Generate one at https://myaccount.google.com/apppasswords and set it in SMTP_PASS.";
+        }
+
         if (requestedByUserId) {
             try {
                 await auditService.createAuditLog(
@@ -447,10 +454,14 @@ const verifySmtpConnection = async () => {
             message: isEthereal ? "Ethereal demo mail transporter active." : "SMTP connection verified successfully."
         };
     } catch (err) {
+        let errMessage = err.message || "SMTP connection failed";
+        if (errMessage.includes("535") || errMessage.includes("BadCredentials") || errMessage.includes("Username and Password not accepted")) {
+            errMessage += " — Note for Gmail: Google requires a 16-character App Password (not your normal account password). Generate one at https://myaccount.google.com/apppasswords and set it in SMTP_PASS.";
+        }
         return {
             configured: true,
             connected: false,
-            error: err.message
+            error: errMessage
         };
     }
 };
