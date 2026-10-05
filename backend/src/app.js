@@ -10,7 +10,9 @@ const alertRoutes = require("./routes/alertRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    exposedHeaders: ["Content-Disposition", "X-Evidence-Legacy"]
+}));
 app.use(express.json());
 
 // API Routes

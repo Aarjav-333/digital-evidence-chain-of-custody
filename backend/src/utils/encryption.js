@@ -67,21 +67,14 @@ const encryptAESKey = (aesKeyHex) => {
     ].join(":");
 };
 const decryptAESKey = (encryptedKeyData) => {
-    if (!encryptedKeyData || typeof encryptedKeyData !== "string") {
-        throw new Error("Invalid or missing encrypted AES key data");
-    }
+
+    const masterKey = Buffer.from(
+        process.env.MASTER_ENCRYPTION_KEY,
+        "hex"
+    );
 
     const parts = encryptedKeyData.split(":");
-    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
-        throw new Error("Encrypted AES key payload format is invalid or incomplete");
-    }
 
-    const masterKeyHex = process.env.MASTER_ENCRYPTION_KEY;
-    if (!masterKeyHex) {
-        throw new Error("MASTER_ENCRYPTION_KEY environment variable is missing");
-    }
-
-    const masterKey = Buffer.from(masterKeyHex, "hex");
     const iv = Buffer.from(parts[0], "hex");
     const authTag = Buffer.from(parts[1], "hex");
     const encryptedKey = Buffer.from(parts[2], "hex");
@@ -102,6 +95,7 @@ const decryptAESKey = (encryptedKeyData) => {
     return decryptedKey.toString("hex");
 };
 
+
 const decryptFile = (
     inputPath,
     outputPath,
@@ -109,12 +103,6 @@ const decryptFile = (
     ivHex,
     authTagHex
 ) => {
-    if (!inputPath || !fs.existsSync(inputPath)) {
-        throw new Error(`Encrypted source file not found at ${inputPath}`);
-    }
-    if (!aesKeyHex || !ivHex || !authTagHex) {
-        throw new Error("Missing required decryption parameters (AES key, IV, or Auth Tag)");
-    }
 
     const key = Buffer.from(aesKeyHex, "hex");
     const iv = Buffer.from(ivHex, "hex");
@@ -136,6 +124,7 @@ const decryptFile = (
     ]);
 
     fs.writeFileSync(outputPath, decryptedData);
+    return decryptedData;
 };
 
 module.exports = {

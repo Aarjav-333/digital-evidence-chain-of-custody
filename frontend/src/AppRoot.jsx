@@ -376,12 +376,14 @@ useEffect(() => {
     }
   };
   const handleDecrypt = async (evidenceId) => {
+    if (decryptingId) return; // Prevent double clicks
+
     try {
       const token = localStorage.getItem("token");
       if (!token) {
         setVaultNotice({
           type: "error",
-          message: "You must be authenticated with valid role credentials to decrypt or access evidence."
+          message: "You must be authenticated with valid role credentials to decrypt evidence."
         });
         return;
       }
@@ -400,7 +402,7 @@ useEffect(() => {
       );
 
       if (!response.ok) {
-        let errMessage = "Failed to decrypt evidence.";
+        let errMessage = "Failed to decrypt evidence";
         try {
           const errData = await response.json();
           if (errData && errData.message) errMessage = errData.message;
@@ -412,17 +414,26 @@ useEffect(() => {
         return;
       }
 
-      // Extract filename from Content-Disposition header if available
+      // Robustly extract filename from Content-Disposition header
       let filename = `evidence-${evidenceId}-decrypted`;
       const disposition = response.headers.get("Content-Disposition");
-      if (disposition && disposition.includes("filename=")) {
-        const matches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (matches && matches[1]) {
-          filename = matches[1].replace(/['"]/g, "").trim();
+      if (disposition) {
+        // First check RFC 5987 / UTF-8 format: filename*=UTF-8''...
+        const utf8Matches = disposition.match(/filename\*=UTF-8''([^;\n]+)/i);
+        if (utf8Matches && utf8Matches[1]) {
+          try {
+            filename = decodeURIComponent(utf8Matches[1].trim());
+          } catch (_) {
+            filename = utf8Matches[1].trim();
+          }
+        } else {
+          // Standard filename="..."
+          const standardMatches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+          if (standardMatches && standardMatches[1]) {
+            filename = standardMatches[1].replace(/['"]/g, "").trim();
+          }
         }
       }
-
-      const isLegacy = response.headers.get("X-Evidence-Legacy") === "true";
 
       const blob = await response.blob();
       const objectUrl = window.URL.createObjectURL(blob);
@@ -434,17 +445,10 @@ useEffect(() => {
       document.body.removeChild(downloadLink);
       window.URL.revokeObjectURL(objectUrl);
 
-      if (isLegacy) {
-        setVaultNotice({
-          type: "info",
-          message: `Legacy unencrypted file downloaded: ${filename} (record registered prior to encryption enforcement).`
-        });
-      } else {
-        setVaultNotice({
-          type: "success",
-          message: `Evidence decrypted and securely downloaded: ${filename}. No plaintext copy remains stored on server.`
-        });
-      }
+      setVaultNotice({
+        type: "success",
+        message: `Evidence decrypted and verified: ${filename}. File securely downloaded.`
+      });
     } catch (error) {
       console.error("Decryption download error:", error);
       setVaultNotice({
@@ -2010,11 +2014,11 @@ const renderCasesPage = () => {
 
   if (loggedIn) {
     return (
-      <div className="dashboard dem-dashboard-layout">
+      <div className="dashboard">
 
         {/* SIDEBAR */}
 
-        <aside className="sidebar dem-sidebar">
+        <aside className="sidebar">
 
           <div className="brand">
 
@@ -2131,7 +2135,7 @@ const renderCasesPage = () => {
 
         {/* MAIN CONTENT */}
 
-        <main className="dashboard-content dem-main-content">
+        <main className="dashboard-content">
 
           {currentPage === "dashboard" &&
           renderDashboard()}

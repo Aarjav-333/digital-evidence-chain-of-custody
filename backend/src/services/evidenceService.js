@@ -3,11 +3,54 @@ const auditService = require("./auditService");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { getMimeTypeByFileName } = require("../utils/mimeHelper");
 
 const {
     decryptAESKey,
     decryptFile
 } = require("../utils/encryption");
+
+/**
+ * Strips the Multer timestamp prefix (digits followed by hyphen) from a filename,
+ * preserving the original base name and extension.
+ * e.g., "1788700368459-lawofcrimes.pdf" -> "lawofcrimes.pdf"
+ */
+const cleanEvidenceFileName = (rawFileName) => {
+    if (!rawFileName) return "evidence-file";
+    const base = path.basename(rawFileName);
+    const cleaned = base.replace(/^\d+-/, "");
+    return cleaned || base;
+};
+
+/**
+ * Robustly resolves the storage path of an evidence file on disk across
+ * possible working directories.
+ */
+const resolveEvidenceFilePath = (rawPath) => {
+    if (!rawPath) return null;
+    if (fs.existsSync(rawPath)) return rawPath;
+
+    const base = path.basename(rawPath);
+
+    const candidates = [
+        path.resolve(__dirname, "../../", rawPath),
+        path.resolve(__dirname, "../../uploads", base),
+        path.resolve(__dirname, "../../uploads/encrypted", base),
+        path.resolve(process.cwd(), rawPath),
+        path.resolve(process.cwd(), "backend", rawPath),
+        path.resolve(process.cwd(), "uploads", base),
+        path.resolve(process.cwd(), "backend/uploads", base),
+        path.resolve(process.cwd(), "backend/uploads/encrypted", base)
+    ];
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    return null;
+};
 
 const createEvidence = async (evidenceData, uploadedBy) => {
     const latestEvidence = await evidenceModel.getLatestEvidenceNumber();
@@ -54,37 +97,11 @@ const createEvidence = async (evidenceData, uploadedBy) => {
     };
 };
 
-const resolveEvidenceFilePath = (storedPath) => {
-    if (!storedPath) return null;
-    if (path.isAbsolute(storedPath) && fs.existsSync(storedPath)) return storedPath;
-
-    const baseName = path.basename(storedPath);
-    const candidates = [
-        path.resolve(__dirname, "../../", storedPath),
-        path.resolve(process.cwd(), storedPath),
-        path.resolve(process.cwd(), "backend", storedPath),
-        path.resolve(__dirname, "../../uploads", baseName),
-        path.resolve(process.cwd(), "uploads", baseName),
-        path.resolve(process.cwd(), "backend/uploads", baseName),
-        path.resolve(__dirname, "../../uploads/encrypted", baseName),
-        path.resolve(process.cwd(), "uploads/encrypted", baseName),
-        path.resolve(process.cwd(), "backend/uploads/encrypted", baseName)
-    ];
-
-    for (const p of candidates) {
-        if (fs.existsSync(p)) {
-            return p;
-        }
-    }
-    return null;
-};
-
 const verifyEvidence = async (evidenceId, userId) => {
     const evidence = await evidenceModel.getEvidenceById(evidenceId);
     if (!evidence) {
         const err = new Error("Evidence record not found");
         err.status = 404;
-        err.code = "EVIDENCE_NOT_FOUND";
         throw err;
     }
 
@@ -96,80 +113,44 @@ const verifyEvidence = async (evidenceId, userId) => {
         evidence.encryption_auth_tag
     );
 
-    const resolvedPath = resolveEvidenceFilePath(evidence.file_path);
-    if (!resolvedPath) {
-        if (userId) {
-            try {
-                await auditService.createAuditLog(
-                    userId,
-                    evidence.evidence_id,
-                    "VERIFY_FAILED",
-                    `Integrity check failed: physical file missing from storage for ${evidence.evidence_number}`
-                );
-            } catch (_) {}
-        }
-        return {
-            evidence_id: evidence.evidence_id,
-            evidence_number: evidence.evidence_number,
-            stored_hash: evidence.file_hash,
-            current_hash: null,
-            integrity_status: "ERROR",
-            message: "Source evidence file not found in storage."
-        };
-    }
-
-    let fileToHash = resolvedPath;
+    let fileToHash = resolveEvidenceFilePath(evidence.file_path);
     let temporaryDecryptedPath = null;
 
     if (hasEncryptionMetadata) {
-        try {
-            const aesKey = decryptAESKey(evidence.encrypted_aes_key);
-            const tempDir = path.resolve(__dirname, "../../uploads/temp");
-            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-            temporaryDecryptedPath = path.join(
-                tempDir,
-                `verify-${Date.now()}-${evidence.evidence_id}-${path.basename(evidence.file_name || "evidence")}`
-            );
-
-            decryptFile(
-                resolvedPath,
-                temporaryDecryptedPath,
-                aesKey,
-                evidence.encryption_iv,
-                evidence.encryption_auth_tag
-            );
-
-            fileToHash = temporaryDecryptedPath;
-        } catch (decErr) {
-            if (temporaryDecryptedPath && fs.existsSync(temporaryDecryptedPath)) {
-                try { fs.unlinkSync(temporaryDecryptedPath); } catch (_) {}
-            }
-            if (userId) {
-                try {
-                    await auditService.createAuditLog(
-                        userId,
-                        evidence.evidence_id,
-                        "VERIFY_FAILED",
-                        `Decryption failed during integrity check for ${evidence.evidence_number}: ${decErr.message}`
-                    );
-                } catch (_) {}
-            }
-            return {
-                evidence_id: evidence.evidence_id,
-                evidence_number: evidence.evidence_number,
-                stored_hash: evidence.file_hash,
-                current_hash: null,
-                integrity_status: "ERROR",
-                message: "Cryptographic decryption failed during integrity verification."
-            };
+        if (!fileToHash) {
+            throw new Error("Encrypted evidence file not found on disk");
         }
+
+        const aesKey = decryptAESKey(evidence.encrypted_aes_key);
+        const tempDir = path.resolve(__dirname, "../../uploads/temp");
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+        const safeBaseName = cleanEvidenceFileName(evidence.file_name || `evidence-${evidence.evidence_number}`);
+        temporaryDecryptedPath = path.join(
+            tempDir,
+            `verify-${Date.now()}-${evidence.evidence_id}-${safeBaseName}`
+        );
+
+        decryptFile(
+            fileToHash,
+            temporaryDecryptedPath,
+            aesKey,
+            evidence.encryption_iv,
+            evidence.encryption_auth_tag
+        );
+
+        fileToHash = temporaryDecryptedPath;
+    }
+
+    if (!fileToHash || !fs.existsSync(fileToHash)) {
+        throw new Error("Evidence file not found on disk");
     }
 
     const fileBuffer = fs.readFileSync(fileToHash);
     const currentHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
     const isValid = currentHash === evidence.file_hash;
 
+    // Immediately clean up temporary decrypted verification file
     if (temporaryDecryptedPath && fs.existsSync(temporaryDecryptedPath)) {
         try { fs.unlinkSync(temporaryDecryptedPath); } catch (_) {}
     }
@@ -226,85 +207,28 @@ const decryptEvidence = async (evidenceId, userId) => {
         evidence.encryption_auth_tag
     );
 
-    const resolvedPath = resolveEvidenceFilePath(evidence.file_path);
-
-    // Case 1: Legacy unencrypted record (uploaded before envelope encryption existed)
     if (!hasEncryptionMetadata) {
-        if (!resolvedPath) {
-            try {
-                await auditService.createAuditLog(
-                    userId,
-                    evidence.evidence_id,
-                    "DECRYPTION_FAILED",
-                    `Legacy unencrypted evidence file missing from storage: ${evidence.evidence_number}`
-                );
-            } catch (_) {}
-            const err = new Error("This legacy record was uploaded prior to cryptographic envelope encryption and its physical file is not found in storage.");
-            err.status = 404;
-            err.code = "LEGACY_FILE_NOT_FOUND";
-            throw err;
-        }
-
-        // Stream legacy unencrypted file directly
-        const tempDir = path.resolve(__dirname, "../../uploads/temp");
-        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-        const uniqueId = crypto.randomBytes(8).toString("hex");
-        const safeBaseName = path.basename(evidence.file_name || `evidence-${evidence.evidence_number}`);
-        const tempOutputFileName = `temp-legacy-${uniqueId}-${safeBaseName}`;
-        const tempOutputPath = path.join(tempDir, tempOutputFileName);
-
-        fs.copyFileSync(resolvedPath, tempOutputPath);
-
-        try {
-            await auditService.createAuditLog(
-                userId,
-                evidence.evidence_id,
-                "ACCESSED",
-                `Legacy unencrypted evidence file retrieved by authorized user: ${evidence.evidence_number}`
-            );
-        } catch (_) {}
-
-        let downloadFileName = safeBaseName;
-        const dashIndex = downloadFileName.indexOf("-");
-        if (dashIndex > 0 && /^\d+$/.test(downloadFileName.substring(0, dashIndex))) {
-            downloadFileName = downloadFileName.substring(dashIndex + 1);
-        }
-
-        return {
-            tempFilePath: tempOutputPath,
-            downloadFileName: `legacy-unencrypted-${downloadFileName}`,
-            isLegacy: true,
-            evidence_id: evidence.evidence_id,
-            evidence_number: evidence.evidence_number
-        };
+        const err = new Error("No encrypted data for this record");
+        err.status = 400;
+        err.code = "NOT_ENCRYPTED";
+        throw err;
     }
 
-    // Case 2: Cryptographically sealed record
+    const resolvedPath = resolveEvidenceFilePath(evidence.file_path);
     if (!resolvedPath) {
         try {
             await auditService.createAuditLog(
                 userId,
                 evidence.evidence_id,
                 "DECRYPTION_FAILED",
-                `Encrypted source file missing from storage: ${evidence.evidence_number}`
+                `Encrypted source file missing from storage for ${evidence.evidence_number}`
             );
         } catch (_) {}
         const err = new Error("Encrypted source evidence file not found in storage.");
         err.status = 404;
-        err.code = "ENCRYPTED_FILE_NOT_FOUND";
+        err.code = "FILE_NOT_FOUND";
         throw err;
     }
-
-    const tempDir = path.resolve(__dirname, "../../uploads/temp");
-    if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    const uniqueId = crypto.randomBytes(8).toString("hex");
-    const safeBaseName = path.basename(evidence.file_name || `evidence-${evidence.evidence_number}`);
-    const tempOutputFileName = `temp-decrypt-${uniqueId}-${safeBaseName}`;
-    const tempOutputPath = path.join(tempDir, tempOutputFileName);
 
     let aesKey;
     try {
@@ -324,15 +248,27 @@ const decryptEvidence = async (evidenceId, userId) => {
         throw err;
     }
 
+    const tempDir = path.resolve(__dirname, "../../uploads/temp");
+    if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const uniqueId = crypto.randomBytes(8).toString("hex");
+    const downloadFileName = cleanEvidenceFileName(evidence.file_name || `evidence-${evidence.evidence_number}`);
+    const tempOutputFileName = `temp-decrypt-${uniqueId}-${downloadFileName}`;
+    const tempOutputPath = path.join(tempDir, tempOutputFileName);
+
+    let decryptedBuffer;
     try {
-        decryptFile(
+        decryptedBuffer = decryptFile(
             resolvedPath,
             tempOutputPath,
             aesKey,
             evidence.encryption_iv,
             evidence.encryption_auth_tag
         );
-    } catch (fileErr) {
+    } catch (gcmErr) {
+        // GCM authentication check failed -> Data tampering detected!
         if (fs.existsSync(tempOutputPath)) {
             try { fs.unlinkSync(tempOutputPath); } catch (_) {}
         }
@@ -341,34 +277,52 @@ const decryptEvidence = async (evidenceId, userId) => {
                 userId,
                 evidence.evidence_id,
                 "DECRYPTION_FAILED",
-                `Authentication check failed while decrypting evidence file: ${evidence.evidence_number}`
+                `Tamper detected: GCM authentication check failed for ${evidence.evidence_number}`
             );
         } catch (_) {}
-        const err = new Error("Cryptographic authentication or decryption failed for evidence file.");
+        const err = new Error("Evidence integrity verification failed: GCM authentication check failed. Data has been tampered with.");
         err.status = 422;
-        err.code = "DECRYPTION_FAILED";
+        err.code = "TAMPER_DETECTED";
         throw err;
     }
 
+    // Forensic SHA-256 integrity check on the decrypted bytes before serving
+    const fileBuffer = decryptedBuffer || fs.readFileSync(tempOutputPath);
+    const computedHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    if (computedHash !== evidence.file_hash) {
+        if (fs.existsSync(tempOutputPath)) {
+            try { fs.unlinkSync(tempOutputPath); } catch (_) {}
+        }
+        try {
+            await auditService.createAuditLog(
+                userId,
+                evidence.evidence_id,
+                "DECRYPTION_FAILED",
+                `Tamper detected: SHA-256 hash mismatch for ${evidence.evidence_number}`
+            );
+        } catch (_) {}
+        const err = new Error("Evidence integrity verification failed: Decrypted SHA-256 hash does not match stored forensic record.");
+        err.status = 422;
+        err.code = "TAMPER_DETECTED";
+        throw err;
+    }
+
+    // Log successful decryption to audit trail
     try {
         await auditService.createAuditLog(
             userId,
             evidence.evidence_id,
             "DECRYPTED",
-            `Evidence decrypted and securely streamed to authorized user: ${evidence.evidence_number}`
+            `Evidence decrypted and integrity verified: ${evidence.evidence_number}`
         );
     } catch (_) {}
 
-    let downloadFileName = safeBaseName;
-    const dashIndex = downloadFileName.indexOf("-");
-    if (dashIndex > 0 && /^\d+$/.test(downloadFileName.substring(0, dashIndex))) {
-        downloadFileName = downloadFileName.substring(dashIndex + 1);
-    }
+    const mimeType = getMimeTypeByFileName(downloadFileName);
 
     return {
         tempFilePath: tempOutputPath,
         downloadFileName: downloadFileName,
-        isLegacy: false,
+        mimeType: mimeType,
         evidence_id: evidence.evidence_id,
         evidence_number: evidence.evidence_number
     };

@@ -17,8 +17,9 @@ const startIntegrityMonitor = (intervalMs = 60000) => {
 
     intervalId = setInterval(async () => {
         try {
-            const results = await alertService.scanAllEvidenceIntegrity();
-            const issues = results.filter(r => r.status !== "INTACT");
+            const summary = await alertService.scanAllEvidenceIntegrity();
+            const scanList = Array.isArray(summary) ? summary : (summary && summary.results) || [];
+            const issues = scanList.filter(r => r.status !== "INTACT");
             if (issues.length > 0) {
                 console.warn(`[IntegrityMonitor] Periodic check detected ${issues.length} tamper/integrity issues!`);
             }
