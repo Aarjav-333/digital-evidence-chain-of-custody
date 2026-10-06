@@ -31,6 +31,8 @@ postmantoken.txt
 backend/uploads/
 uploads/
 frontend.zip
+*.zip
+
 
 # =============================================================================
 # Build & Distribution Artifacts

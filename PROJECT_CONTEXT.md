@@ -331,10 +331,13 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 5. **`custody_logs`**:
    - Fields: `custody_id` (PK), `evidence_id` (FK -> `evidence`), `from_user` (FK -> `users`), `to_user` (FK -> `users`), `action`, `remarks`, `created_at`.
 6. **`audit_logs`**:
-   - Fields: `audit_id` (PK), `user_id` (FK -> `users`), `evidence_id` (FK -> `evidence`), `action`, `details`, `created_at`.
+   - Fields: `audit_id` (PK), `user_id` (FK -> `users`), `evidence_id` (FK -> `evidence`), `action`, `details`, `created_at`, `prev_hash` (VARCHAR(64)), `entry_hash` (VARCHAR(64)).
+   - Cryptographic Hash Chain: SHA-256 hash chain linking each row to previous row's `entry_hash`, serialized via PostgreSQL advisory transaction lock (`pg_advisory_xact_lock`). Verified automatically by background integrity monitor; breaks raise `AUDIT_CHAIN_BROKEN` critical alerts.
+   - Indexes: `idx_audit_logs_entry_hash`, `idx_audit_logs_prev_hash`.
 7. **`tamper_alerts`**:
-   - Fields: `alert_id` (PK), `evidence_id` (FK -> `evidence`), `case_id` (FK -> `cases`), `alert_type`, `severity` (DEFAULT 'CRITICAL'), `stored_hash`, `detected_hash`, `file_path`, `message`, `status` ('ACTIVE', 'RESOLVED'), `detected_at`, `resolved_by` (FK -> `users`), `resolved_at`, `resolution_notes`, `email_status` ('PENDING', 'SENT', 'FAILED'), `email_attempts` (INT DEFAULT 0), `email_last_error` (TEXT), `email_sent_at` (TIMESTAMP WITH TIME ZONE).
+   - Fields: `alert_id` (PK), `evidence_id` (FK -> `evidence`, NULLABLE for system-wide alerts), `case_id` (FK -> `cases`), `alert_type`, `severity` (DEFAULT 'CRITICAL'), `stored_hash` (NULLABLE), `detected_hash`, `file_path`, `message`, `status` ('ACTIVE', 'RESOLVED'), `detected_at`, `resolved_by` (FK -> `users`), `resolved_at`, `resolution_notes`, `email_status` ('PENDING', 'SENT', 'FAILED'), `email_attempts` (INT DEFAULT 0), `email_last_error` (TEXT), `email_sent_at` (TIMESTAMP WITH TIME ZONE).
    - Constraints & Indexes: Partial unique index `idx_active_tamper_alerts_unique ON tamper_alerts (evidence_id, alert_type) WHERE status = 'ACTIVE'`.
+   - Alert Types: `HASH_MISMATCH`, `FILE_MISSING`, `CORRUPTED_CIPHERTEXT`, `KEY_UNWRAP_FAILED`, `SCAN_ERROR`, `AUDIT_CHAIN_BROKEN`, `UNREGISTERED_FILE`, `EVIDENCE_RECORD_DELETED`, `MANIFEST_HASH_MISMATCH`, `MANIFEST_TAMPERED`.
 8. **`forensic_reports`**:
    - Fields: `report_id` (PK), `report_number` (UNIQUE), `case_id` (FK -> `cases`), `evidence_id` (FK -> `evidence`), `analyst_id` (FK -> `users`), `report_title`, `report_type`, `tools_used`, `hash_verified`, `findings`, `artifacts_recovered`, `conclusion`, `status`, `recipient_id` (FK -> `users`), `recipient_name`, `recipient_agency`, `transmission_priority`, `dispatch_notes`, `sent_at`, `created_at`.
 9. **`autopsy_records`**:
@@ -475,6 +478,27 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 
 ## 9. Changelog
 
+- **2026-10-07**:
+  - **Audit Log Cryptographic Hash Chain**:
+    - Added `prev_hash VARCHAR(64)` and `entry_hash VARCHAR(64)` columns and indexes to `audit_logs` (`database/migrations/20261007_audit_logs_hash_chain.sql`, `database/schema.sql`).
+    - Backfilled entire history across all existing rows with SHA-256 chain without altering existing payload data (`backend/src/utils/migrateAuditHashChain.js`).
+    - Implemented sequential hash chain computation (`computeAuditEntryHash`) in `backend/src/services/auditService.js` with PostgreSQL transaction advisory locking (`pg_advisory_xact_lock`) to serialize concurrent insertions and maintain strict sequential integrity.
+    - Implemented `verifyAuditLogChain` verifier validating every entry's hash link; integrated into the integrity scheduler to raise `CRITICAL` `AUDIT_CHAIN_BROKEN` alerts upon detecting altered or deleted records.
+  - **Daily Signed Integrity Manifest**:
+    - Implemented `backend/src/services/manifestService.js` generating canonical JSON integrity manifests of all evidence records (`evidence_id`, `evidence_number`, `file_hash`) and the latest audit chain hash.
+    - Signs manifests with HMAC-SHA256 using key configured via `MANIFEST_SIGNING_KEY`.
+    - Persists signed manifests in secure directory outside the repository root configured via `MANIFEST_DIR` (default: `~/.digital_evidence_vault/manifests`).
+    - Automatically sends daily signed manifest digest emails to administrators via `sendSignedManifestEmail` in `backend/src/services/emailService.js`.
+    - Cross-references database evidence against latest manifest during every vault scan, raising `MANIFEST_HASH_MISMATCH`, `MANIFEST_TAMPERED`, and `EVIDENCE_RECORD_DELETED` alerts.
+  - **Unregistered Files & Deleted Evidence Detection**:
+    - Added `scanUnregisteredFiles` in `backend/src/services/alertService.js` identifying orphaned files in `uploads/` lacking database records, raising `UNREGISTERED_FILE` alerts.
+    - Updated `tamper_alerts` schema (`database/migrations/20261007_tamper_alerts_nullable_fields.sql`) allowing `NULL` `evidence_id` and `stored_hash` for system-level alerts while maintaining duplicate suppression via unique `file_path`.
+  - **Two-Tier Autonomous Integrity Scanning**:
+    - Added tier configuration via environment variables: `INTEGRITY_SCAN_MINUTES` (lightweight scan detecting size/mtime modifications) and `INTEGRITY_FULL_SCAN_MINUTES` (full streaming SHA-256 rehash and GCM authentication).
+  - **Append-Only Audit Log Migration Prepared**:
+    - Prepared declarative migration `database/migrations/20261007_audit_logs_append_only.sql` providing an immutable `BEFORE UPDATE OR DELETE` PostgreSQL trigger and permission revocation commands, pending administrator approval.
+  - **Security Test Verification Suite**:
+    - Created `backend/src/utils/testHardeningSecurity.js` verifying hash chain breaks (`AUDIT_CHAIN_BROKEN`), deleted evidence rows vs manifest (`EVIDENCE_RECORD_DELETED`), stray physical files (`UNREGISTERED_FILE`), and duplicate suppression on consecutive scans. All scenarios verified end-to-end with 100% pass rate.
 - **2026-10-06**:
   - **Evidence Decryption & Legacy Download RBAC Enforcement & Forensic Analyst Workflow Restoration**:
     - Separated `canDecryptEvidence` (Roles 1 & 4) from `canAuthorReports` (Role 4 only) in `frontend/src/utils/permissionHelper.js`, ensuring role permissions are decoupled.
