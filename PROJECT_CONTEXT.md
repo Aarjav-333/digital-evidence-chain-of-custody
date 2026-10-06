@@ -17,11 +17,11 @@
 - **Courtroom Admissibility**: Generate deterministic forensic reports and case dossiers in standard PDF format without relying on nondeterministic generative AI.
 
 ### User Roles & Access Hierarchy
-Role definitions are stored in the `roles` table and enforced via backend middleware (`roleMiddleware.js`):
-1. **System Administrator (`role_id: 1`)**: Full administrative control; user management, evidence upload, hash verification, file decryption, case management, alert resolution, and forensic PDF generation.
-2. **Police Officer (`role_id: 2`)**: Field officer responsible for initial evidence intake, case registration, and basic custody transfers.
-3. **Case Manager (`role_id: 3`)**: Lead investigator supervising assigned cases, inspecting evidence inventories, initiating transfers, and generating case dossiers.
-4. **Forensic Analyst (`role_id: 4`)**: Laboratory specialist authorized to decrypt encrypted evidence, conduct digital device autopsies, compile technical examination reports, and dispatch forensic findings.
+Role definitions are stored in the `roles` table and enforced via backend middleware (`roleMiddleware.js`) and service guards:
+1. **System Administrator (`role_id: 1`)**: Full administrative control; user management, evidence upload, hash verification, file decryption, case management, alert resolution, and forensic PDF download. View-only access on Forensic Laboratory & Reports.
+2. **Police Officer (`role_id: 2`)**: Field officer responsible for initial evidence intake, case registration, and basic custody transfers. View and download access on Forensic Laboratory & Reports.
+3. **Case Manager (`role_id: 3`)**: Lead investigator supervising assigned cases, inspecting evidence inventories, initiating transfers, and downloading case dossiers. View-only access on Forensic Laboratory & Reports.
+4. **Forensic Analyst (`role_id: 4`)**: Laboratory specialist (displayed in UI as Forensic Officer) authorized to decrypt encrypted evidence, conduct digital device hardware autopsies, draft and compile technical examination reports, and dispatch forensic findings. Exclusively authorized to author or dispatch reports.
 
 ---
 
@@ -245,12 +245,28 @@ npm run dev
 | **Tamper Alert Center** | **Done** | `backend/src/routes/alertRoutes.js`<br>`backend/src/controllers/alertController.js`<br>`frontend/src/components/AlertCenter.jsx` | Dashboard showing active hash mismatches, manual trigger button for scans, alert resolution modal with audit notes, unconfigured email warnings banner, and test email trigger. |
 | **Email Intrusion Alerts** | **Done** | `backend/src/services/emailService.js`<br>`backend/src/services/alertService.js`<br>`backend/src/utils/demoTamperAlert.js` | Nodemailer SMTP alerts sent to Admin upon critical tampering detection. When SMTP is unconfigured and `DEMO_MAIL` is not set, suppresses delivery, logs clear error, and writes `SYSTEM_WARNING` audit log. Falls back to Ethereal sandbox with preview URLs only when `DEMO_MAIL=true`. |
 | **Administrative Test Email** | **Done** | `backend/src/routes/alertRoutes.js`<br>`backend/src/controllers/alertController.js`<br>`backend/src/services/emailService.js`<br>`frontend/src/components/AlertCenter.jsx` | Protected `POST /api/alerts/test-email` endpoint and Alert Center UI button allowing System Administrators to safely verify SMTP connectivity without exposing credentials. |
-| **Forensic Reports & Autopsies** | **Done** | `backend/src/routes/reportRoutes.js`<br>`backend/src/controllers/reportController.js`<br>`frontend/src/components/ForensicSuite.jsx` | Technical report generation, hardware triage / write-block documentation, recipient dispatch with priority levels. |
-| **Deterministic PDF Dossier** | **Done** | `backend/src/routes/reportRoutes.js`<br>`backend/src/services/forensicPdfService.js`<br>`frontend/src/components/ForensicSuite.jsx` | Generates official PDF reports containing case metadata, evidence digests, custody trails, and audit records via PDFKit. |
+| **Forensic Reports & Autopsies** | **Done** | `backend/src/routes/reportRoutes.js`<br>`backend/src/controllers/reportController.js`<br>`backend/src/services/reportService.js`<br>`backend/src/middleware/roleMiddleware.js`<br>`frontend/src/utils/permissionHelper.js`<br>`frontend/src/components/ForensicSuite.jsx` | Technical examination reports, device hardware autopsy triage, recipient dispatch with priority levels. Full authoring and dispatch restricted strictly to Forensic Officer (`role_id: 4`). System Administrator (`1`), Police Officer (`2`), and Case Manager (`3`) have view-only and PDF download permissions. Denied attempts return HTTP 403 and are logged to `audit_logs` as `ACCESS_DENIED`. |
+| **Deterministic PDF Dossier** | **Done** | `backend/src/routes/reportRoutes.js`<br>`backend/src/services/forensicPdfService.js`<br>`frontend/src/components/ForensicSuite.jsx` | Generates official PDF reports containing case metadata, evidence digests, custody trails, and audit records via PDFKit. Accessible to Roles 1, 2, 3, and 4. |
 | **UI Design System Redesign** | **Done** | `frontend/src/styles/theme.css`<br>`frontend/src/styles/layout.css`<br>`frontend/src/components/common/` | All 7 primary pages redesigned to dark theme card layouts with standard vertical labels and purple accents. |
 | **Alert Center UI Unification** | **Partial** | `frontend/src/components/AlertCenter.jsx` | Fully functional, but still relies on table layouts rather than the new `Card`, `Badge`, and `MetaItem` components. |
-| **Automated Unit & E2E Testing** | **Partial** | `backend/package.json`<br>`frontend/package.json` | Manual verification and runtime health checks active; no automated test runner configured (Jest/Mocha/Vitest). |
+| **Automated Unit & E2E Testing** | **Partial** | `backend/package.json`<br>`frontend/package.json`<br>`backend/src/utils/verifyReportRoles.js` | Verification suites for RBAC and monitor hardening active; no automated CI runner configured (Jest/Mocha/Vitest). |
 | **Live SMTP Production Testing** | **Verified (Demo)** | `backend/src/services/emailService.js`<br>`backend/src/utils/demoTamperAlert.js` | Verified end-to-end via Ethereal sandbox with live browser preview URLs; production delivery requires populated SMTP_PASS in `.env`. |
+
+### Forensic Laboratory & Reports Permission Matrix
+
+| Operation / Capability | Route / Surface | Admin (`1`) | Police (`2`) | Case Mgr (`3`) | Forensic Officer (`4`) | Security & UI Behavior |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **View Forensic Reports** | `GET /api/reports/forensic` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | Full report list visible in Transmit & Dispatch tab. |
+| **View Digital Autopsies** | `GET /api/reports/autopsy` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | Saved autopsy records list visible in Autopsy Suite tab. |
+| **Inspect Autopsy Details** | UI Modal (Autopsy Suite) | Allowed | Allowed | Allowed | Allowed | "🔍 View Details" inspection modal renders full hardware triage summary. |
+| **View Case Dossier** | `GET /api/cases/:caseId/dossier` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | Comprehensive evidence and custody timeline. |
+| **Download Forensic PDF** | `GET /api/reports/forensic/:caseId/download` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | Generates and streams deterministic PDF dossier. |
+| **Generate Forensic Report** | `POST /api/reports/forensic` | Denied (403) | Denied (403) | Denied (403) | Allowed (201) | Tab hidden in UI; direct URL renders lock notice; service logs `ACCESS_DENIED`. |
+| **Dispatch Forensic Report** | `POST /api/reports/forensic/:id/dispatch` | Denied (403) | Denied (403) | Denied (403) | Allowed (200) | "🚀 Dispatch" button hidden in UI; backend middleware + service reject with 403. |
+| **Draft Autopsy Record** | `POST /api/reports/autopsy` | Denied (403) | Denied (403) | Denied (403) | Allowed (201) | Intake form completely hidden in UI; service logs `ACCESS_DENIED`. |
+| **Dispatch Autopsy Record** | `POST /api/reports/autopsy/:id/dispatch` | Denied (403) | Denied (403) | Denied (403) | Allowed (200) | Dispatch action hidden in UI; backend rejects with 403. |
+| **Forensic Workspace** | UI Workspace View | View Only | View Only | View Only | Full Authoring | Draft Report and Autopsy action buttons hidden for Roles 1–3. |
+| **View-Only Mode Indicator** | UI Header Badge | Visible | Visible | Visible | Hidden | Displays prominent cyan "View-Only Mode" badge for Roles 1–3. |
 
 ---
 
@@ -277,13 +293,13 @@ npm run dev
 | `POST` | `/api/alerts/run-check` | Manually trigger full vault integrity scan | All Authenticated |
 | `PUT` | `/api/alerts/:id/resolve` | Mark tamper alert resolved with audit notes | All Authenticated |
 | `POST` | `/api/alerts/test-email` | Dispatch safe administrative SMTP test email | System Administrator (Role 1) |
-| `GET` | `/api/reports/forensic` | List all forensic examination reports | All Authenticated |
-| `POST` | `/api/reports/forensic` | Create a new forensic examination report | All Authenticated |
-| `POST` | `/api/reports/forensic/:id/dispatch` | Dispatch forensic report to personnel/agency | All Authenticated |
-| `GET` | `/api/reports/forensic/:caseId/download` | Download official deterministic PDF dossier | Admin (1), Case Manager (3), Analyst (4) |
-| `GET` | `/api/reports/autopsy` | List digital hardware autopsy records | All Authenticated |
-| `POST` | `/api/reports/autopsy` | Record hardware triage and bit-stream extraction | All Authenticated |
-| `POST` | `/api/reports/autopsy/:id/dispatch` | Dispatch autopsy report to investigator | All Authenticated |
+| `GET` | `/api/reports/forensic` | List all forensic examination reports | All Authenticated (Roles 1–4) |
+| `POST` | `/api/reports/forensic` | Create a new forensic examination report | Forensic Officer Only (Role 4) |
+| `POST` | `/api/reports/forensic/:id/dispatch` | Dispatch forensic report to personnel/agency | Forensic Officer Only (Role 4) |
+| `GET` | `/api/reports/forensic/:caseId/download` | Download official deterministic PDF dossier | All Authenticated (Roles 1–4) |
+| `GET` | `/api/reports/autopsy` | List digital hardware autopsy records | All Authenticated (Roles 1–4) |
+| `POST` | `/api/reports/autopsy` | Record hardware triage and bit-stream extraction | Forensic Officer Only (Role 4) |
+| `POST` | `/api/reports/autopsy/:id/dispatch` | Dispatch autopsy report to investigator | Forensic Officer Only (Role 4) |
 
 ---
 
@@ -447,6 +463,21 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 ## 9. Changelog
 
 - **2026-10-06**:
+  - **Forensic Report & Digital Autopsy RBAC Restriction**:
+    - Restricted report and digital autopsy authoring/dispatch write operations exclusively to Forensic Officer (`role_id: 4`, DB role name `Forensic Analyst`), covering both `POL2026003` and `FOR2026001`.
+    - Hardened backend routes (`backend/src/routes/reportRoutes.js`) with `authorizeRoles(4)` on `POST /api/reports/forensic`, `POST /api/reports/forensic/:id/dispatch`, `POST /api/reports/autopsy`, and `POST /api/reports/autopsy/:id/dispatch`.
+    - Added defense-in-depth service guards (`backend/src/services/reportService.js`) rejecting unauthorized calls with 403 `{ error: "FORBIDDEN", message: "Your role has view-only access to reports." }` and logging immutable `ACCESS_DENIED` entries to `audit_logs`.
+    - Opened deterministic PDF report download (`GET /api/reports/forensic/:caseId/download`) to all authenticated roles (Roles 1, 2, 3, 4).
+    - Preserved report immutability: zero edit or delete endpoints exist or were added.
+    - Added frontend role check utility (`frontend/src/utils/permissionHelper.js` with `canAuthorReports`).
+    - Updated `frontend/src/components/ForensicSuite.jsx`:
+      - Displays cyan "View-Only Mode" badge for Roles 1, 2, 3.
+      - Hides "Generate Forensic Report" tab for view-only roles (direct URL visits render locked notice with redirect to Transmit & Dispatch; form is never mounted).
+      - Hides "Draft Report" and "Autopsy" action buttons from the Forensic Workspace table for view-only roles.
+      - Retains PDF download card and per-report download buttons in Transmit & Dispatch, but hides dispatch action controls for view-only roles.
+      - Hides Digital Autopsy intake form for view-only roles, displaying saved autopsy table with a full-detail inspection modal ("🔍 View Details").
+      - Replaced all legacy `alert()` dialogs with inline status banners.
+    - Verified entire matrix across all 4 roles via automated verification test (`backend/src/utils/verifyReportRoles.js`), confirming 403 on writes for Roles 1–3, 201/200 for Role 4, 200 on views and PDF downloads for all roles, and verified corresponding `ACCESS_DENIED` audit log entries.
   - **Integrity Monitor Hardening & Email Dispatch Telemetry**:
     - Applied schema migration `database/migrations/20261006_harden_tamper_alerts.sql` and updated `database/schema.sql` adding `email_status`, `email_attempts`, `email_last_error`, `email_sent_at` and partial unique index `idx_active_tamper_alerts_unique` on `tamper_alerts (evidence_id, alert_type) WHERE status = 'ACTIVE'`.
     - Updated `backend/src/models/alertModel.js` with error code `23505` (`unique_violation`) deduplication handling, email telemetry update method (`updateAlertEmailDispatch`), and `getUnsentActiveAlerts(5)` retrieval.

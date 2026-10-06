@@ -1,5 +1,56 @@
+const pool = require("../config/db");
 const reportModel = require("../models/reportModel");
 const auditService = require("./auditService");
+
+/**
+ * Validates that the executing user has the authorized Forensic Officer role (role_id === 4).
+ * Enforces role authorization at the service layer to prevent route bypass.
+ *
+ * @param {Object|number} user User object from req.user or numeric user_id
+ * @param {string} actionName Descriptive action name for audit log
+ * @param {number|null} evidenceId Optional associated evidence_id
+ * @returns {Promise<{ userId: number, roleId: number }>}
+ */
+const checkReportAuthorRole = async (user, actionName = "report authoring", evidenceId = null) => {
+    let roleId = null;
+    let userId = null;
+    let empId = "Unknown";
+
+    if (user && typeof user === "object") {
+        roleId = user.role_id;
+        userId = user.user_id;
+        empId = user.employee_id || user.full_name || `User #${userId}`;
+    } else if (typeof user === "number") {
+        userId = user;
+        const uRes = await pool.query("SELECT user_id, employee_id, full_name, role_id FROM users WHERE user_id = $1;", [userId]);
+        if (uRes.rows.length > 0) {
+            roleId = uRes.rows[0].role_id;
+            empId = uRes.rows[0].employee_id || uRes.rows[0].full_name;
+        }
+    }
+
+    if (roleId !== 4) {
+        if (userId) {
+            try {
+                await auditService.createAuditLog(
+                    userId,
+                    evidenceId || null,
+                    "ACCESS_DENIED",
+                    `[SECURITY] Unauthorized ${actionName} attempt by user ${empId} (Role ID: ${roleId || "Unknown"}). Write access restricted to Forensic Officer.`
+                );
+            } catch (auditErr) {
+                console.warn("[ReportService] Failed to record access denied audit entry:", auditErr.message);
+            }
+        }
+
+        const forbiddenError = new Error("Your role has view-only access to reports.");
+        forbiddenError.statusCode = 403;
+        forbiddenError.code = "FORBIDDEN";
+        throw forbiddenError;
+    }
+
+    return { userId, roleId };
+};
 
 const generateReportNumber = async (prefix = "FAR") => {
     const latest = await reportModel.getLatestReportNumber();
@@ -25,7 +76,9 @@ const generateAutopsyNumber = async () => {
     return `AUT-${year}-${nextNum}`;
 };
 
-const createForensicReport = async (reportData, userId) => {
+const createForensicReport = async (reportData, user) => {
+    const { userId } = await checkReportAuthorRole(user, "Forensic Report creation", reportData.evidence_id);
+
     if (!reportData.report_number) {
         reportData.report_number = await generateReportNumber("FAR");
     }
@@ -40,7 +93,9 @@ const createForensicReport = async (reportData, userId) => {
     return report;
 };
 
-const dispatchForensicReport = async (reportId, dispatchData, userId) => {
+const dispatchForensicReport = async (reportId, dispatchData, user) => {
+    const { userId } = await checkReportAuthorRole(user, "Forensic Report dispatch");
+
     const dispatched = await reportModel.dispatchForensicReport(reportId, dispatchData);
     await auditService.createAuditLog(
         userId,
@@ -51,7 +106,9 @@ const dispatchForensicReport = async (reportId, dispatchData, userId) => {
     return dispatched;
 };
 
-const createAutopsy = async (autopsyData, userId) => {
+const createAutopsy = async (autopsyData, user) => {
+    const { userId } = await checkReportAuthorRole(user, "Digital Autopsy creation", autopsyData.evidence_id);
+
     if (!autopsyData.autopsy_number) {
         autopsyData.autopsy_number = await generateAutopsyNumber();
     }
@@ -66,7 +123,9 @@ const createAutopsy = async (autopsyData, userId) => {
     return autopsy;
 };
 
-const dispatchAutopsy = async (autopsyId, dispatchData, userId) => {
+const dispatchAutopsy = async (autopsyId, dispatchData, user) => {
+    const { userId } = await checkReportAuthorRole(user, "Digital Autopsy dispatch");
+
     const dispatched = await reportModel.dispatchAutopsy(autopsyId, dispatchData);
     await auditService.createAuditLog(
         userId,
@@ -81,5 +140,6 @@ module.exports = {
     createForensicReport,
     dispatchForensicReport,
     createAutopsy,
-    dispatchAutopsy
+    dispatchAutopsy,
+    checkReportAuthorRole
 };

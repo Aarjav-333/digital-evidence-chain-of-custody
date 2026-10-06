@@ -16,10 +16,16 @@ const createForensicReport = async (req, res) => {
         if (!req.user || !req.user.user_id) {
             return res.status(401).json({ success: false, message: "Authentication required" });
         }
-        const userId = req.user.user_id;
-        const report = await reportService.createForensicReport(req.body, userId);
+        const report = await reportService.createForensicReport(req.body, req.user);
         res.status(201).json({ success: true, message: "Forensic report created successfully", data: report });
     } catch (error) {
+        if (error.statusCode === 403 || error.code === "FORBIDDEN") {
+            return res.status(403).json({
+                success: false,
+                error: "FORBIDDEN",
+                message: error.message || "Your role has view-only access to reports."
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -30,10 +36,16 @@ const dispatchForensicReport = async (req, res) => {
             return res.status(401).json({ success: false, message: "Authentication required" });
         }
         const { id } = req.params;
-        const userId = req.user.user_id;
-        const result = await reportService.dispatchForensicReport(id, req.body, userId);
+        const result = await reportService.dispatchForensicReport(id, req.body, req.user);
         res.status(200).json({ success: true, message: "Report dispatched successfully", data: result });
     } catch (error) {
+        if (error.statusCode === 403 || error.code === "FORBIDDEN") {
+            return res.status(403).json({
+                success: false,
+                error: "FORBIDDEN",
+                message: error.message || "Your role has view-only access to reports."
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -52,10 +64,16 @@ const createAutopsy = async (req, res) => {
         if (!req.user || !req.user.user_id) {
             return res.status(401).json({ success: false, message: "Authentication required" });
         }
-        const userId = req.user.user_id;
-        const autopsy = await reportService.createAutopsy(req.body, userId);
+        const autopsy = await reportService.createAutopsy(req.body, req.user);
         res.status(201).json({ success: true, message: "Autopsy record logged successfully", data: autopsy });
     } catch (error) {
+        if (error.statusCode === 403 || error.code === "FORBIDDEN") {
+            return res.status(403).json({
+                success: false,
+                error: "FORBIDDEN",
+                message: error.message || "Your role has view-only access to reports."
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -66,10 +84,16 @@ const dispatchAutopsy = async (req, res) => {
             return res.status(401).json({ success: false, message: "Authentication required" });
         }
         const { id } = req.params;
-        const userId = req.user.user_id;
-        const result = await reportService.dispatchAutopsy(id, req.body, userId);
+        const result = await reportService.dispatchAutopsy(id, req.body, req.user);
         res.status(200).json({ success: true, message: "Autopsy dispatched successfully", data: result });
     } catch (error) {
+        if (error.statusCode === 403 || error.code === "FORBIDDEN") {
+            return res.status(403).json({
+                success: false,
+                error: "FORBIDDEN",
+                message: error.message || "Your role has view-only access to reports."
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };

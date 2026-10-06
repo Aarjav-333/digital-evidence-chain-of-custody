@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { PageHeader, Card, Badge, Button, FormField, EmptyState } from "./common";
+import { canAuthorReports } from "../utils/permissionHelper";
 
 export default function ForensicSuite({ user, evidence = [], cases = [], onRefresh }) {
+  const isAuthor = canAuthorReports(user);
   const [activeTab, setActiveTab] = useState("workspace");
   const [usersList, setUsersList] = useState([]);
   const [pdfCaseId, setPdfCaseId] = useState(cases.length > 0 ? cases[0].case_id : "");
@@ -58,6 +60,9 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
   const [autopsyMessage, setAutopsyMessage] = useState("");
   const [autopsyError, setAutopsyError] = useState("");
 
+  // Autopsy detail view modal
+  const [selectedAutopsyDetail, setSelectedAutopsyDetail] = useState(null);
+
   // Autopsy dispatch modal
   const [dispatchingAutopsy, setDispatchingAutopsy] = useState(null);
   const [autopsyDispatchForm, setAutopsyDispatchForm] = useState({
@@ -66,6 +71,7 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
     dispatch_notes: ""
   });
   const [autopsyDispatchLoading, setAutopsyDispatchLoading] = useState(false);
+  const [autopsyDispatchError, setAutopsyDispatchError] = useState("");
 
   const token = localStorage.getItem("token");
 
@@ -120,11 +126,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
     fetchAutopsies();
   }, []);
 
-  
   const handleDownloadPdfReport = async (caseIdToDownload) => {
     const targetCaseId = caseIdToDownload || pdfCaseId;
     if (!targetCaseId) {
-      alert("Please select a case to generate the report.");
+      setPdfStatus("Error: Please select a case file to generate the forensic report PDF.");
       return;
     }
     if (!token) return;
@@ -171,7 +176,6 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
     } catch (err) {
       console.error("PDF download error:", err);
       setPdfStatus("Download error: " + err.message);
-      alert("Failed to download forensic report: " + err.message);
     } finally {
       setPdfDownloading(false);
     }
@@ -179,6 +183,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
 
   const handleCreateReport = async (e) => {
     e.preventDefault();
+    if (!isAuthor) {
+      setReportError("Your role has view-only access to reports.");
+      return;
+    }
     setReportMessage("");
     setReportError("");
     if (!token) return;
@@ -201,12 +209,12 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
           findings: reportForm.findings,
           artifacts_recovered: reportForm.artifacts_recovered,
           conclusion: reportForm.conclusion,
-          status: "FINALIZED"
+          status: reportForm.status
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setReportMessage("Report " + data.data.report_number + " generated successfully!");
+        setReportMessage("Forensic report " + data.data.report_number + " created successfully!");
         setReportForm({
           case_id: "",
           evidence_id: "",
@@ -220,12 +228,11 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
           status: "FINALIZED"
         });
         await fetchReports();
-        setTimeout(() => setActiveTab("send-report"), 1500);
       } else {
-        setReportError(data.message || "Failed to create report");
+        setReportError(data.message || (data.error === "FORBIDDEN" ? "Your role has view-only access to reports." : "Failed to create forensic report"));
       }
     } catch (err) {
-      setReportError(err.message);
+      setReportError(err.message || "Failed to create forensic report");
     } finally {
       setReportCreateLoading(false);
     }
@@ -233,10 +240,14 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
 
   const handleConfirmDispatchReport = async (e) => {
     e.preventDefault();
+    if (!isAuthor) {
+      setDispatchError("Your role has view-only access to reports.");
+      return;
+    }
     if (!dispatchingReport || !token) return;
     setDispatchLoading(true);
-    setDispatchMessage("");
     setDispatchError("");
+    setDispatchMessage("");
 
     try {
       const res = await fetch("http://localhost:3000/api/reports/forensic/" + dispatchingReport.report_id + "/dispatch", {
@@ -256,10 +267,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
           setDispatchMessage("");
         }, 1200);
       } else {
-        setDispatchError(data.message || "Failed to dispatch report");
+        setDispatchError(data.message || (data.error === "FORBIDDEN" ? "Your role has view-only access to reports." : "Failed to dispatch report"));
       }
     } catch (err) {
-      setDispatchError(err.message);
+      setDispatchError(err.message || "Failed to dispatch report");
     } finally {
       setDispatchLoading(false);
     }
@@ -267,6 +278,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
 
   const handleCreateAutopsy = async (e) => {
     e.preventDefault();
+    if (!isAuthor) {
+      setAutopsyError("Your role has view-only access to reports.");
+      return;
+    }
     setAutopsyMessage("");
     setAutopsyError("");
     if (!token) return;
@@ -307,10 +322,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         });
         await fetchAutopsies();
       } else {
-        setAutopsyError(data.message || "Failed to log autopsy record");
+        setAutopsyError(data.message || (data.error === "FORBIDDEN" ? "Your role has view-only access to reports." : "Failed to log autopsy record"));
       }
     } catch (err) {
-      setAutopsyError(err.message);
+      setAutopsyError(err.message || "Failed to log autopsy record");
     } finally {
       setAutopsyCreateLoading(false);
     }
@@ -318,8 +333,13 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
 
   const handleConfirmDispatchAutopsy = async (e) => {
     e.preventDefault();
+    if (!isAuthor) {
+      setAutopsyDispatchError("Your role has view-only access to reports.");
+      return;
+    }
     if (!dispatchingAutopsy || !token) return;
     setAutopsyDispatchLoading(true);
+    setAutopsyDispatchError("");
 
     try {
       const res = await fetch("http://localhost:3000/api/reports/autopsy/" + dispatchingAutopsy.autopsy_id + "/dispatch", {
@@ -335,10 +355,10 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         setDispatchingAutopsy(null);
         await fetchAutopsies();
       } else {
-        alert(data.message || "Failed to dispatch autopsy");
+        setAutopsyDispatchError(data.message || (data.error === "FORBIDDEN" ? "Your role has view-only access to reports." : "Failed to dispatch autopsy"));
       }
     } catch (err) {
-      alert(err.message);
+      setAutopsyDispatchError(err.message || "Failed to dispatch autopsy");
     } finally {
       setAutopsyDispatchLoading(false);
     }
@@ -351,6 +371,34 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         title="Forensic Laboratory & Reports"
         subtitle="Cryptographic examination, memory extraction reports, digital autopsy suite, and verified judicial dispatches."
         user={user}
+        actions={
+          !isAuthor ? (
+            <Badge
+              variant="neutral"
+              style={{
+                background: "rgba(148, 163, 184, 0.14)",
+                color: "#cbd5e1",
+                border: "1px solid rgba(148, 163, 184, 0.3)",
+                padding: "6px 12px",
+                fontSize: "12px",
+                fontWeight: 600
+              }}
+            >
+              🔒 View-Only Mode
+            </Badge>
+          ) : (
+            <Badge
+              variant="valid"
+              style={{
+                padding: "6px 12px",
+                fontSize: "12px",
+                fontWeight: 600
+              }}
+            >
+              ⚡ Authoring Authorized
+            </Badge>
+          )
+        }
       />
 
       {/* SUBNAV TABS */}
@@ -362,13 +410,15 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         >
           🔬 Forensic Workspace
         </button>
-        <button
-          type="button"
-          className={"dem-tab " + (activeTab === "create-report" ? "active" : "")}
-          onClick={() => setActiveTab("create-report")}
-        >
-          📝 Generate Forensic Report
-        </button>
+        {isAuthor && (
+          <button
+            type="button"
+            className={"dem-tab " + (activeTab === "create-report" ? "active" : "")}
+            onClick={() => setActiveTab("create-report")}
+          >
+            📝 Generate Forensic Report
+          </button>
+        )}
         <button
           type="button"
           className={"dem-tab " + (activeTab === "send-report" ? "active" : "")}
@@ -433,7 +483,9 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
               <div>
                 <h2 className="dem-section-title">Evidence Awaiting Forensic Analysis</h2>
                 <p className="dem-section-subtitle">
-                  Select digital evidence to initiate a forensic examination dossier or hardware device autopsy
+                  {isAuthor
+                    ? "Select digital evidence to initiate a forensic examination dossier or hardware device autopsy"
+                    : "Evidence inventory currently registered and available for laboratory examination"}
                 </p>
               </div>
             </div>
@@ -477,38 +529,44 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
                             {item.case_title || item.case_number || `Case #${item.case_id}`}
                           </td>
                           <td style={{ textAlign: "right" }}>
-                            <div style={{ display: "inline-flex", gap: "8px" }}>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => {
-                                  setReportForm((prev) => ({
-                                    ...prev,
-                                    case_id: item.case_id || "",
-                                    evidence_id: item.evidence_id,
-                                    report_title: "Digital Forensic Examination of " + item.evidence_name
-                                  }));
-                                  setActiveTab("create-report");
-                                }}
-                              >
-                                📝 Draft Report
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setAutopsyForm((prev) => ({
-                                    ...prev,
-                                    case_id: item.case_id || "",
-                                    evidence_id: item.evidence_id,
-                                    subject_name: item.evidence_name
-                                  }));
-                                  setActiveTab("autopsy");
-                                }}
-                              >
-                                ⚡ Autopsy
-                              </Button>
-                            </div>
+                            {isAuthor ? (
+                              <div style={{ display: "inline-flex", gap: "8px" }}>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setReportForm((prev) => ({
+                                      ...prev,
+                                      case_id: item.case_id || "",
+                                      evidence_id: item.evidence_id,
+                                      report_title: "Digital Forensic Examination of " + item.evidence_name
+                                    }));
+                                    setActiveTab("create-report");
+                                  }}
+                                >
+                                  📝 Draft Report
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setAutopsyForm((prev) => ({
+                                      ...prev,
+                                      case_id: item.case_id || "",
+                                      evidence_id: item.evidence_id,
+                                      subject_name: item.evidence_name
+                                    }));
+                                    setActiveTab("autopsy");
+                                  }}
+                                >
+                                  ⚡ Autopsy
+                                </Button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                                View Only
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -523,23 +581,257 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
 
       {/* TAB 2: CREATE REPORT */}
       {activeTab === "create-report" && (
-        <>
-          {/* DETERMINISTIC PDF DOCKET CARD */}
-          <Card style={{ background: "linear-gradient(135deg, #1A1D27 0%, #151822 100%)", border: "1px solid rgba(139, 92, 246, 0.25)" }}>
+        !isAuthor ? (
+          <Card>
+            <div style={{ textAlign: "center", padding: "48px 24px" }}>
+              <div style={{ fontSize: "40px", marginBottom: "16px" }}>🔒</div>
+              <h3 className="dem-section-title" style={{ fontSize: "20px", marginBottom: "8px" }}>
+                Forensic Report Authoring Restricted
+              </h3>
+              <p className="dem-section-subtitle" style={{ maxWidth: "560px", margin: "0 auto 24px auto", fontSize: "14px", lineHeight: "1.6" }}>
+                Your current role (<strong>{user?.role_name || "Investigator"}</strong>) has view-only access to reports.
+                Drafting, authoring, and certifying official laboratory examination dossiers is strictly restricted to the <strong>Forensic Officer</strong>.
+              </p>
+              <div style={{ display: "inline-flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+                <Button variant="primary" icon="📥" onClick={() => setActiveTab("send-report")}>
+                  Go to Transmit & Dispatch to View Reports
+                </Button>
+                <Button variant="secondary" icon="🔬" onClick={() => setActiveTab("workspace")}>
+                  Return to Workspace
+                </Button>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <>
+            {/* DETERMINISTIC PDF DOCKET CARD */}
+            <Card style={{ background: "linear-gradient(135deg, #1A1D27 0%, #151822 100%)", border: "1px solid rgba(139, 92, 246, 0.25)" }}>
+              <div className="dem-card-header">
+                <div>
+                  <h3 className="dem-section-title" style={{ color: "#DDD6FE" }}>📄 Official Case Forensic Docket (Deterministic PDF)</h3>
+                  <p className="dem-section-subtitle">
+                    Generates an immutable system dossier containing case records, complete SHA-256 evidence digests, verification status, custody handovers, and audit trails directly from database records.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap", marginTop: "12px" }}>
+                <div style={{ flex: 1, minWidth: "260px" }}>
+                  <FormField label="Select Target Investigation Case" id="pdfCaseId">
+                    <select
+                      id="pdfCaseId"
+                      value={pdfCaseId}
+                      onChange={(e) => setPdfCaseId(e.target.value)}
+                      className="dem-select"
+                    >
+                      <option value="">-- Choose Case File --</option>
+                      {cases.map((c) => (
+                        <option key={c.case_id} value={c.case_id}>
+                          {c.case_number} - {c.case_title}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+
+                <Button
+                  variant="primary"
+                  icon="📥"
+                  disabled={!pdfCaseId || pdfDownloading}
+                  loading={pdfDownloading}
+                  onClick={() => handleDownloadPdfReport(pdfCaseId)}
+                >
+                  {pdfDownloading ? "Compiling PDF Docket..." : "Download Official Forensic Report (PDF)"}
+                </Button>
+              </div>
+
+              {pdfStatus && (
+                <div
+                  className={`dem-alert-banner ${
+                    pdfStatus.toLowerCase().includes("error") ? "dem-alert-error" : "dem-alert-success"
+                  }`}
+                  style={{ marginTop: "14px" }}
+                >
+                  <span>{pdfStatus}</span>
+                </div>
+              )}
+            </Card>
+
+            {/* REPORT CREATION FORM CARD */}
+            <Card>
+              <div className="dem-card-header">
+                <div>
+                  <h2 className="dem-section-title">Forensic Technical Examination Intake</h2>
+                  <p className="dem-section-subtitle">
+                    Document memory carvings, artifact extractions, and expert cryptographic conclusions
+                  </p>
+                </div>
+              </div>
+
+              <form
+                onSubmit={handleCreateReport}
+                style={{ display: "flex", flexDirection: "column", gap: "20px" }}
+              >
+                <div className="dem-form-grid-2">
+                  <FormField label="Associated Case" id="report_case" required>
+                    <select
+                      id="report_case"
+                      value={reportForm.case_id}
+                      onChange={(e) => setReportForm({ ...reportForm, case_id: e.target.value })}
+                      required
+                      className="dem-select"
+                    >
+                      <option value="">-- Select Case File --</option>
+                      {cases.map((c) => (
+                        <option key={c.case_id} value={c.case_id}>
+                          {c.case_number} - {c.case_title}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Digital Evidence Item" id="report_ev" required>
+                    <select
+                      id="report_ev"
+                      value={reportForm.evidence_id}
+                      onChange={(e) => setReportForm({ ...reportForm, evidence_id: e.target.value })}
+                      required
+                      className="dem-select"
+                    >
+                      <option value="">-- Choose Evidence Item --</option>
+                      {evidence.map((ev) => (
+                        <option key={ev.evidence_id} value={ev.evidence_id}>
+                          {ev.evidence_number} - {ev.evidence_name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+
+                <div className="dem-form-grid-2">
+                  <FormField label="Report Title / Subject" id="report_title" required>
+                    <input
+                      id="report_title"
+                      type="text"
+                      value={reportForm.report_title}
+                      onChange={(e) => setReportForm({ ...reportForm, report_title: e.target.value })}
+                      required
+                      placeholder="e.g. Comprehensive Volatile Memory & Disk Analysis"
+                      className="dem-input"
+                    />
+                  </FormField>
+
+                  <FormField label="Examination Type" id="report_type">
+                    <select
+                      id="report_type"
+                      value={reportForm.report_type}
+                      onChange={(e) => setReportForm({ ...reportForm, report_type: e.target.value })}
+                      className="dem-select"
+                    >
+                      <option value="DIGITAL_FORENSIC_EXAMINATION">Digital Forensic Examination</option>
+                      <option value="MEMORY_ANALYSIS">Volatile Memory Analysis</option>
+                      <option value="NETWORK_PACKET_INSPECTION">Network Packet Inspection</option>
+                      <option value="MALWARE_TRIAGE">Malware Triage & Reverse Engineering</option>
+                      <option value="CLOUD_AUDIT">Cloud Storage Artifact Recovery</option>
+                    </select>
+                  </FormField>
+                </div>
+
+                <FormField label="Tools & Frameworks Utilized" id="report_tools">
+                  <input
+                    id="report_tools"
+                    type="text"
+                    value={reportForm.tools_used}
+                    onChange={(e) => setReportForm({ ...reportForm, tools_used: e.target.value })}
+                    placeholder="e.g. Autopsy 4.21, FTK Imager, Volatility 3, Wireshark, Ghidra"
+                    className="dem-input"
+                  />
+                </FormField>
+
+                <FormField label="Forensic Findings & Technical Evidence" id="report_findings" required>
+                  <textarea
+                    id="report_findings"
+                    rows={4}
+                    value={reportForm.findings}
+                    onChange={(e) => setReportForm({ ...reportForm, findings: e.target.value })}
+                    required
+                    placeholder="Detail specific artifacts located, offset positions, deleted timestamps, or communication traces..."
+                    className="dem-textarea"
+                  />
+                </FormField>
+
+                <FormField label="Recovered Artifacts & Cryptographic Proofs" id="report_artifacts">
+                  <textarea
+                    id="report_artifacts"
+                    rows={3}
+                    value={reportForm.artifacts_recovered}
+                    onChange={(e) => setReportForm({ ...reportForm, artifacts_recovered: e.target.value })}
+                    placeholder="List file signatures, SHA-256 hash trees, carving outputs, or decoded payloads..."
+                    className="dem-textarea"
+                  />
+                </FormField>
+
+                <FormField label="Expert Conclusion & Judicial Certification" id="report_conclusion" required>
+                  <textarea
+                    id="report_conclusion"
+                    rows={3}
+                    value={reportForm.conclusion}
+                    onChange={(e) => setReportForm({ ...reportForm, conclusion: e.target.value })}
+                    required
+                    placeholder="Provide authoritative diagnostic summary certified under digital forensics standard ISO/IEC 27037..."
+                    className="dem-textarea"
+                  />
+                </FormField>
+
+                {reportMessage && (
+                  <div className="dem-alert-banner dem-alert-success">
+                    <span>✓</span>
+                    <span>{reportMessage}</span>
+                  </div>
+                )}
+
+                {reportError && (
+                  <div className="dem-alert-banner dem-alert-error">
+                    <span>✕</span>
+                    <span>{reportError}</span>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    icon="💾"
+                    loading={reportCreateLoading}
+                  >
+                    {reportCreateLoading ? "Saving Examination Record..." : "Save Technical Examination Record"}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </>
+        )
+      )}
+
+      {/* TAB 3: DISPATCH REPORTS */}
+      {activeTab === "send-report" && (
+        <div>
+          {/* DETERMINISTIC PDF DOCKET CARD - AVAILABLE TO ALL VIEWERS */}
+          <Card style={{ background: "linear-gradient(135deg, #1A1D27 0%, #151822 100%)", border: "1px solid rgba(139, 92, 246, 0.25)", marginBottom: "24px" }}>
             <div className="dem-card-header">
               <div>
                 <h3 className="dem-section-title" style={{ color: "#DDD6FE" }}>📄 Official Case Forensic Docket (Deterministic PDF)</h3>
                 <p className="dem-section-subtitle">
-                  Generates an immutable system dossier containing case records, complete SHA-256 evidence digests, verification status, custody handovers, and audit trails directly from database records.
+                  Generate an immutable system dossier containing case records, complete SHA-256 evidence digests, verification status, custody handovers, and audit trails directly from database records.
                 </p>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap", marginTop: "12px" }}>
               <div style={{ flex: 1, minWidth: "260px" }}>
-                <FormField label="Select Target Investigation Case" id="pdfCaseId">
+                <FormField label="Select Target Investigation Case" id="pdfCaseIdDispatch">
                   <select
-                    id="pdfCaseId"
+                    id="pdfCaseIdDispatch"
                     value={pdfCaseId}
                     onChange={(e) => setPdfCaseId(e.target.value)}
                     className="dem-select"
@@ -577,167 +869,13 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
             )}
           </Card>
 
-          {/* REPORT CREATION FORM CARD */}
-          <Card>
-            <div className="dem-card-header">
-              <div>
-                <h2 className="dem-section-title">Forensic Technical Examination Intake</h2>
-                <p className="dem-section-subtitle">
-                  Document memory carvings, artifact extractions, and expert cryptographic conclusions
-                </p>
-              </div>
-            </div>
-
-            <form
-              onSubmit={handleCreateReport}
-              style={{ display: "flex", flexDirection: "column", gap: "20px" }}
-            >
-              <div className="dem-form-grid-2">
-                <FormField label="Associated Case" id="report_case" required>
-                  <select
-                    id="report_case"
-                    value={reportForm.case_id}
-                    onChange={(e) => setReportForm({ ...reportForm, case_id: e.target.value })}
-                    required
-                    className="dem-select"
-                  >
-                    <option value="">-- Select Case --</option>
-                    {cases.map((c) => (
-                      <option key={c.case_id} value={c.case_id}>
-                        {c.case_number} - {c.case_title}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Evidence Asset Item" id="report_evidence" required>
-                  <select
-                    id="report_evidence"
-                    value={reportForm.evidence_id}
-                    onChange={(e) => setReportForm({ ...reportForm, evidence_id: e.target.value })}
-                    required
-                    className="dem-select"
-                  >
-                    <option value="">-- Select Evidence --</option>
-                    {evidence.map((e) => (
-                      <option key={e.evidence_id} value={e.evidence_id}>
-                        {e.evidence_number} - {e.evidence_name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-              </div>
-
-              <FormField label="Forensic Report Title" id="report_title" required>
-                <input
-                  id="report_title"
-                  type="text"
-                  value={reportForm.report_title}
-                  onChange={(e) => setReportForm({ ...reportForm, report_title: e.target.value })}
-                  placeholder="e.g. Cryptographic Hash Verification & Volatile Memory Analysis"
-                  required
-                  className="dem-input"
-                />
-              </FormField>
-
-              <div className="dem-form-grid-2">
-                <FormField label="Forensic Toolchain Used" id="tools_used" required>
-                  <input
-                    id="tools_used"
-                    type="text"
-                    value={reportForm.tools_used}
-                    onChange={(e) => setReportForm({ ...reportForm, tools_used: e.target.value })}
-                    placeholder="e.g. Autopsy v4.21, Volatility 3, FTK Imager"
-                    required
-                    className="dem-input"
-                  />
-                </FormField>
-
-                <div style={{ display: "flex", alignItems: "center", paddingTop: "26px" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", color: "var(--text-primary)", fontSize: "14px" }}>
-                    <input
-                      type="checkbox"
-                      checked={reportForm.hash_verified}
-                      onChange={(e) => setReportForm({ ...reportForm, hash_verified: e.target.checked })}
-                      style={{ width: "18px", height: "18px", accentColor: "var(--accent)" }}
-                    />
-                    <span>Cryptographic SHA-256 Pre-Verification Confirmed</span>
-                  </label>
-                </div>
-              </div>
-
-              <FormField label="Technical Examination Findings" id="findings" required>
-                <textarea
-                  id="findings"
-                  rows={4}
-                  value={reportForm.findings}
-                  onChange={(e) => setReportForm({ ...reportForm, findings: e.target.value })}
-                  placeholder="Document partition layout, hidden files, timestamps, volatile artifacts, deleted records..."
-                  required
-                  className="dem-textarea"
-                />
-              </FormField>
-
-              <FormField label="Recovered Digital Artifacts" id="artifacts">
-                <textarea
-                  id="artifacts"
-                  rows={3}
-                  value={reportForm.artifacts_recovered}
-                  onChange={(e) => setReportForm({ ...reportForm, artifacts_recovered: e.target.value })}
-                  placeholder="List specific artifacts: SQLite databases, browser history, exfiltrated files, chat transcripts..."
-                  className="dem-textarea"
-                />
-              </FormField>
-
-              <FormField label="Forensic Conclusion & Expert Opinion" id="conclusion" required>
-                <textarea
-                  id="conclusion"
-                  rows={3}
-                  value={reportForm.conclusion}
-                  onChange={(e) => setReportForm({ ...reportForm, conclusion: e.target.value })}
-                  placeholder="State professional opinion regarding data authenticity, signs of tampering, or attribution..."
-                  required
-                  className="dem-textarea"
-                />
-              </FormField>
-
-              {reportMessage && (
-                <div className="dem-alert-banner dem-alert-success">
-                  <span>✓</span>
-                  <span>{reportMessage}</span>
-                </div>
-              )}
-
-              {reportError && (
-                <div className="dem-alert-banner dem-alert-error">
-                  <span>✕</span>
-                  <span>{reportError}</span>
-                </div>
-              )}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  icon="💾"
-                  loading={reportCreateLoading}
-                >
-                  {reportCreateLoading ? "Saving Examination Record..." : "Save Technical Examination Record"}
-                </Button>
-              </div>
-            </form>
-          </Card>
-        </>
-      )}
-
-      {/* TAB 3: DISPATCH REPORTS */}
-      {activeTab === "send-report" && (
-        <div>
           <div className="dem-section-header">
             <div>
               <h2 className="dem-section-title">Transmitted & Available Forensic Reports</h2>
               <p className="dem-section-subtitle">
-                Securely dispatch technical reports to accredited Case Managers, Prosecutors, or Admin
+                {isAuthor
+                  ? "Securely dispatch technical reports to accredited Case Managers, Prosecutors, or Admin"
+                  : "Review finalized laboratory examination records and download certified PDF dockets"}
               </p>
             </div>
             <Button variant="outline" icon="↻" onClick={fetchReports}>
@@ -758,7 +896,9 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
             <EmptyState
               icon="📝"
               title="No Forensic Reports Generated"
-              message="Use the 'Generate Forensic Report' tab to compile and certify your first technical examination."
+              message={isAuthor
+                ? "Use the 'Generate Forensic Report' tab to compile and certify your first technical examination."
+                : "No forensic technical examination records have been authored yet."}
             />
           )}
 
@@ -829,22 +969,24 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
                             >
                               📥 PDF
                             </Button>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setDispatchingReport(rep);
-                                setDispatchForm({
-                                  recipient_id: usersList[0]?.user_id || "",
-                                  recipient_name: usersList[0]?.full_name || "Investigating Officer",
-                                  recipient_agency: "Cyber Crime Division",
-                                  transmission_priority: "HIGH",
-                                  dispatch_notes: "Transmitting forensic findings for report " + rep.report_number + "."
-                                });
-                              }}
-                            >
-                              🚀 Dispatch
-                            </Button>
+                            {isAuthor && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => {
+                                  setDispatchingReport(rep);
+                                  setDispatchForm({
+                                    recipient_id: usersList[0]?.user_id || "",
+                                    recipient_name: usersList[0]?.full_name || "Investigating Officer",
+                                    recipient_agency: "Cyber Crime Division",
+                                    transmission_priority: "HIGH",
+                                    dispatch_notes: "Transmitting forensic findings for report " + rep.report_number + "."
+                                  });
+                                }}
+                              >
+                                🚀 Dispatch
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -860,161 +1002,185 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
       {/* TAB 4: DIGITAL AUTOPSY SUITE */}
       {activeTab === "autopsy" && (
         <>
-          {/* AUTOPSY INTAKE FORM */}
-          <Card>
-            <div className="dem-card-header">
-              <div>
-                <h2 className="dem-section-title">Digital Device Autopsy & Hardware Triage</h2>
-                <p className="dem-section-subtitle">
-                  Document physical hardware examination, write-blocking verification, and raw image extraction
-                </p>
-              </div>
-            </div>
-
-            <form
-              onSubmit={handleCreateAutopsy}
-              style={{ display: "flex", flexDirection: "column", gap: "20px" }}
+          {/* READ-ONLY BANNER FOR VIEW-ONLY ROLES */}
+          {!isAuthor && (
+            <div
+              style={{
+                background: "rgba(148, 163, 184, 0.08)",
+                border: "1px solid rgba(148, 163, 184, 0.22)",
+                borderRadius: "8px",
+                padding: "12px 18px",
+                marginBottom: "20px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px"
+              }}
             >
-              <div className="dem-form-grid-2">
-                <FormField label="Associated Case" id="autopsy_case" required>
-                  <select
-                    id="autopsy_case"
-                    value={autopsyForm.case_id}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, case_id: e.target.value })}
-                    required
-                    className="dem-select"
-                  >
-                    <option value="">-- Select Case --</option>
-                    {cases.map((c) => (
-                      <option key={c.case_id} value={c.case_id}>
-                        {c.case_number} - {c.case_title}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
+              <span style={{ fontSize: "18px" }}>ℹ️</span>
+              <span style={{ fontSize: "13px", color: "#cbd5e1" }}>
+                <strong>View-Only Autopsy Access:</strong> You can inspect completed hardware device autopsies and physical extraction details. Hardware triage and bit-stream physical extraction intake is strictly authorized for Forensic Officers.
+              </span>
+            </div>
+          )}
 
-                <FormField label="Evidence Reference" id="autopsy_evidence" required>
-                  <select
-                    id="autopsy_evidence"
-                    value={autopsyForm.evidence_id}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, evidence_id: e.target.value })}
-                    required
-                    className="dem-select"
-                  >
-                    <option value="">-- Select Evidence --</option>
-                    {evidence.map((e) => (
-                      <option key={e.evidence_id} value={e.evidence_id}>
-                        {e.evidence_number} - {e.evidence_name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Subject Device Name" id="subject_name" required>
-                  <input
-                    id="subject_name"
-                    type="text"
-                    value={autopsyForm.subject_name}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, subject_name: e.target.value })}
-                    placeholder="e.g. Seized Samsung Galaxy S23 / Kingston 512GB SSD"
-                    required
-                    className="dem-input"
-                  />
-                </FormField>
-
-                <FormField label="Device Type" id="device_type">
-                  <select
-                    id="device_type"
-                    value={autopsyForm.device_type}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, device_type: e.target.value })}
-                    className="dem-select"
-                  >
-                    <option value="Solid State Drive (M.2 NVMe)">Solid State Drive (M.2 NVMe)</option>
-                    <option value="Mechanical Hard Drive (SATA HDD)">Mechanical Hard Drive (SATA HDD)</option>
-                    <option value="Smartphone (Android)">Smartphone (Android)</option>
-                    <option value="Smartphone (Apple iOS)">Smartphone (Apple iOS)</option>
-                    <option value="USB Flash Drive / SD Card">USB Flash Drive / SD Card</option>
-                    <option value="Server / NAS Appliance">Server / NAS Appliance</option>
-                  </select>
-                </FormField>
-
-                <FormField label="Physical Hardware Condition" id="hardware_condition" required>
-                  <input
-                    id="hardware_condition"
-                    type="text"
-                    value={autopsyForm.hardware_condition}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, hardware_condition: e.target.value })}
-                    placeholder="e.g. Intact, write-blocked during physical acquisition"
-                    required
-                    className="dem-input"
-                  />
-                </FormField>
-
-                <FormField label="Extraction / Imaging Method" id="extraction_method" required>
-                  <input
-                    id="extraction_method"
-                    type="text"
-                    value={autopsyForm.extraction_method}
-                    onChange={(e) => setAutopsyForm({ ...autopsyForm, extraction_method: e.target.value })}
-                    placeholder="e.g. Bit-stream physical forensic image (E01 format)"
-                    required
-                    className="dem-input"
-                  />
-                </FormField>
+          {/* AUTOPSY INTAKE FORM (RENDERED FOR FORENSIC OFFICER ONLY) */}
+          {isAuthor && (
+            <Card>
+              <div className="dem-card-header">
+                <div>
+                  <h2 className="dem-section-title">Digital Device Autopsy & Hardware Triage</h2>
+                  <p className="dem-section-subtitle">
+                    Document physical hardware examination, write-blocking verification, and raw image extraction
+                  </p>
+                </div>
               </div>
 
-              <FormField label="Autopsy Findings & Partition Analysis" id="autopsy_findings" required>
-                <textarea
-                  id="autopsy_findings"
-                  rows={3}
-                  value={autopsyForm.autopsy_findings}
-                  onChange={(e) => setAutopsyForm({ ...autopsyForm, autopsy_findings: e.target.value })}
-                  placeholder="Record partition layout, firmware metadata, bad sector analysis, unallocated space carving..."
-                  required
-                  className="dem-textarea"
-                />
-              </FormField>
+              <form
+                onSubmit={handleCreateAutopsy}
+                style={{ display: "flex", flexDirection: "column", gap: "20px" }}
+              >
+                <div className="dem-form-grid-2">
+                  <FormField label="Associated Case" id="autopsy_case" required>
+                    <select
+                      id="autopsy_case"
+                      value={autopsyForm.case_id}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, case_id: e.target.value })}
+                      required
+                      className="dem-select"
+                    >
+                      <option value="">-- Select Case --</option>
+                      {cases.map((c) => (
+                        <option key={c.case_id} value={c.case_id}>
+                          {c.case_number} - {c.case_title}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
 
-              <FormField label="Triage & Health Summary" id="triage_summary">
-                <textarea
-                  id="triage_summary"
-                  rows={2}
-                  value={autopsyForm.triage_summary}
-                  onChange={(e) => setAutopsyForm({ ...autopsyForm, triage_summary: e.target.value })}
-                  placeholder="Summary of hardware stability, write-block certification, integrity confirmation..."
-                  className="dem-textarea"
-                />
-              </FormField>
-
-              {autopsyMessage && (
-                <div className="dem-alert-banner dem-alert-success">
-                  <span>✓</span>
-                  <span>{autopsyMessage}</span>
+                  <FormField label="Evidence Reference" id="autopsy_evidence" required>
+                    <select
+                      id="autopsy_evidence"
+                      value={autopsyForm.evidence_id}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, evidence_id: e.target.value })}
+                      required
+                      className="dem-select"
+                    >
+                      <option value="">-- Select Evidence Item --</option>
+                      {evidence.map((ev) => (
+                        <option key={ev.evidence_id} value={ev.evidence_id}>
+                          {ev.evidence_number} - {ev.evidence_name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
                 </div>
-              )}
 
-              {autopsyError && (
-                <div className="dem-alert-banner dem-alert-error">
-                  <span>✕</span>
-                  <span>{autopsyError}</span>
+                <div className="dem-form-grid-2">
+                  <FormField label="Subject Device / Manufacturer" id="autopsy_subject" required>
+                    <input
+                      id="autopsy_subject"
+                      type="text"
+                      value={autopsyForm.subject_name}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, subject_name: e.target.value })}
+                      required
+                      placeholder="e.g. Samsung 980 Pro NVMe / iPhone 13 Pro Max"
+                      className="dem-input"
+                    />
+                  </FormField>
+
+                  <FormField label="Hardware Device Category" id="autopsy_dev_type">
+                    <select
+                      id="autopsy_dev_type"
+                      value={autopsyForm.device_type}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, device_type: e.target.value })}
+                      className="dem-select"
+                    >
+                      <option value="Solid State Drive (M.2 NVMe)">Solid State Drive (M.2 NVMe)</option>
+                      <option value="Mobile Phone (iOS / Android)">Mobile Phone (iOS / Android)</option>
+                      <option value="Mechanical Hard Disk (SATA 3.5)">Mechanical Hard Disk (SATA 3.5)</option>
+                      <option value="Removable Flash Memory (USB/SD)">Removable Flash Memory (USB/SD)</option>
+                      <option value="Encrypted Hardware Token">Encrypted Hardware Token</option>
+                      <option value="Embedded Automotive ECU">Embedded Automotive ECU</option>
+                    </select>
+                  </FormField>
                 </div>
-              )}
 
-              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  icon="⚡"
-                  loading={autopsyCreateLoading}
-                >
-                  {autopsyCreateLoading ? "Recording..." : "Log Digital Autopsy Record"}
-                </Button>
-              </div>
-            </form>
-          </Card>
+                <div className="dem-form-grid-2">
+                  <FormField label="Physical Hardware Condition & Write-Blocking" id="autopsy_hw_cond">
+                    <input
+                      id="autopsy_hw_cond"
+                      type="text"
+                      value={autopsyForm.hardware_condition}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, hardware_condition: e.target.value })}
+                      placeholder="e.g. Intact, Tableau T8u Forensic USB 3.0 bridge write-block confirmed"
+                      className="dem-input"
+                    />
+                  </FormField>
 
-          {/* AUTOPSY LOGS TABLE */}
-          <div>
+                  <FormField label="Physical Imaging & Extraction Technique" id="autopsy_ext_method">
+                    <input
+                      id="autopsy_ext_method"
+                      type="text"
+                      value={autopsyForm.extraction_method}
+                      onChange={(e) => setAutopsyForm({ ...autopsyForm, extraction_method: e.target.value })}
+                      placeholder="e.g. Bit-stream physical forensic image (E01 format) via FTK Imager"
+                      className="dem-input"
+                    />
+                  </FormField>
+                </div>
+
+                <FormField label="Triage & Visual Inspection Summary" id="autopsy_triage">
+                  <textarea
+                    id="autopsy_triage"
+                    rows={3}
+                    value={autopsyForm.triage_summary}
+                    onChange={(e) => setAutopsyForm({ ...autopsyForm, triage_summary: e.target.value })}
+                    placeholder="Describe external port condition, serial numbers, connector integrity, or forensic triage observations..."
+                    className="dem-textarea"
+                  />
+                </FormField>
+
+                <FormField label="Autopsy Findings & Carved Partition Structure" id="autopsy_find">
+                  <textarea
+                    id="autopsy_find"
+                    rows={4}
+                    value={autopsyForm.autopsy_findings}
+                    onChange={(e) => setAutopsyForm({ ...autopsyForm, autopsy_findings: e.target.value })}
+                    placeholder="Document GPT/MBR partition tables, BitLocker status, unallocated space clusters, or damaged sectors..."
+                    className="dem-textarea"
+                  />
+                </FormField>
+
+                {autopsyMessage && (
+                  <div className="dem-alert-banner dem-alert-success">
+                    <span>✓</span>
+                    <span>{autopsyMessage}</span>
+                  </div>
+                )}
+
+                {autopsyError && (
+                  <div className="dem-alert-banner dem-alert-error">
+                    <span>✕</span>
+                    <span>{autopsyError}</span>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    icon="⚡"
+                    loading={autopsyCreateLoading}
+                  >
+                    {autopsyCreateLoading ? "Saving Autopsy Record..." : "Log Completed Hardware Autopsy"}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          )}
+
+          {/* AUTOPSY RECORDS TABLE (AVAILABLE TO ALL ROLES) */}
+          <div style={{ marginTop: isAuthor ? "32px" : "0" }}>
             <div className="dem-section-header">
               <div>
                 <h2 className="dem-section-title">Digital Autopsy Records</h2>
@@ -1040,7 +1206,9 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
               <EmptyState
                 icon="⚡"
                 title="No Device Autopsies Recorded"
-                message="Use the form above to document the physical acquisition and extraction of a hardware device."
+                message={isAuthor
+                  ? "Use the form above to document the physical acquisition and extraction of a hardware device."
+                  : "No device autopsy records are currently registered in the system."}
               />
             )}
 
@@ -1093,20 +1261,33 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
                             )}
                           </td>
                           <td style={{ textAlign: "right" }}>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setDispatchingAutopsy(item);
-                                setAutopsyDispatchForm({
-                                  dispatched_to: "Lead Investigator & Evidence Vault",
-                                  recipient_id: usersList[0]?.user_id || "",
-                                  dispatch_notes: "Hardware examination completed for " + item.autopsy_number + ". Bit-stream image archived."
-                                });
-                              }}
-                            >
-                              🚀 Send Autopsy
-                            </Button>
+                            <div style={{ display: "inline-flex", gap: "8px" }}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedAutopsyDetail(item)}
+                                title="Inspect full autopsy findings and triage report"
+                              >
+                                🔍 View Details
+                              </Button>
+                              {isAuthor && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDispatchingAutopsy(item);
+                                    setAutopsyDispatchError("");
+                                    setAutopsyDispatchForm({
+                                      dispatched_to: "Lead Investigator & Evidence Vault",
+                                      recipient_id: usersList[0]?.user_id || "",
+                                      dispatch_notes: "Hardware examination completed for " + item.autopsy_number + ". Bit-stream image archived."
+                                    });
+                                  }}
+                                >
+                                  🚀 Send Autopsy
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1119,8 +1300,114 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         </>
       )}
 
-      {/* DISPATCH REPORT MODAL */}
-      {dispatchingReport && (
+      {/* AUTOPSY DETAIL MODAL (FOR ALL ROLES) */}
+      {selectedAutopsyDetail && (
+        <div className="dem-modal-backdrop">
+          <div className="dem-modal-card" style={{ maxWidth: "700px" }}>
+            <div className="dem-card-header">
+              <div>
+                <h3 className="dem-section-title">
+                  Digital Device Autopsy: {selectedAutopsyDetail.autopsy_number}
+                </h3>
+                <p className="dem-section-subtitle">
+                  Hardware extraction and forensic triage dossier
+                </p>
+              </div>
+              <button
+                type="button"
+                style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "18px", cursor: "pointer" }}
+                onClick={() => setSelectedAutopsyDetail(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxHeight: "70vh", overflowY: "auto", paddingRight: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", background: "var(--bg-input)", padding: "16px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Subject Device</div>
+                  <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedAutopsyDetail.subject_name || "N/A"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Device Category</div>
+                  <div style={{ marginTop: "2px" }}>{selectedAutopsyDetail.device_type || "N/A"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Associated Case</div>
+                  <div style={{ marginTop: "2px" }}>{selectedAutopsyDetail.case_number ? `${selectedAutopsyDetail.case_number} - ${selectedAutopsyDetail.case_title || ""}` : `Case #${selectedAutopsyDetail.case_id}`}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Evidence Item</div>
+                  <div style={{ marginTop: "2px" }}>{selectedAutopsyDetail.evidence_number ? `${selectedAutopsyDetail.evidence_number} (${selectedAutopsyDetail.evidence_name || ""})` : `EV-#${selectedAutopsyDetail.evidence_id}`}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Forensic Examiner</div>
+                  <div style={{ marginTop: "2px" }}>{selectedAutopsyDetail.examiner_name || `Examiner #${selectedAutopsyDetail.examiner_id}`}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Status</div>
+                  <div style={{ marginTop: "2px" }}>
+                    <Badge variant={selectedAutopsyDetail.status === "DISPATCHED" ? "valid" : "accent"}>
+                      {selectedAutopsyDetail.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>Hardware Condition & Write-Blocking</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", background: "var(--bg-card)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                  {selectedAutopsyDetail.hardware_condition || "Not recorded"}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>Extraction Technique</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", background: "var(--bg-card)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                  {selectedAutopsyDetail.extraction_method || "Not recorded"}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>Triage & Visual Inspection Summary</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", background: "var(--bg-card)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", whiteSpace: "pre-wrap" }}>
+                  {selectedAutopsyDetail.triage_summary || "No summary provided"}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>Autopsy Findings & Carved Partition Structure</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", background: "var(--bg-card)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", whiteSpace: "pre-wrap" }}>
+                  {selectedAutopsyDetail.autopsy_findings || "No findings recorded"}
+                </div>
+              </div>
+
+              {selectedAutopsyDetail.dispatched_to && (
+                <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.25)", padding: "12px 16px", borderRadius: "var(--radius-sm)" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#6ee7b7", marginBottom: "4px" }}>Chain of Custody Dispatch</div>
+                  <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+                    Dispatched to <strong>{selectedAutopsyDetail.dispatched_to}</strong> on {selectedAutopsyDetail.dispatched_at ? new Date(selectedAutopsyDetail.dispatched_at).toLocaleString() : "N/A"}.
+                    {selectedAutopsyDetail.dispatch_notes && (
+                      <div style={{ marginTop: "4px", fontSize: "12px", fontStyle: "italic", color: "var(--text-muted)" }}>
+                        Notes: "{selectedAutopsyDetail.dispatch_notes}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+              <Button variant="secondary" onClick={() => setSelectedAutopsyDetail(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DISPATCH REPORT MODAL (FORENSIC OFFICER ONLY) */}
+      {isAuthor && dispatchingReport && (
         <div className="dem-modal-backdrop">
           <div className="dem-modal-card">
             <div className="dem-card-header">
@@ -1232,8 +1519,8 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
         </div>
       )}
 
-      {/* DISPATCH AUTOPSY MODAL */}
-      {dispatchingAutopsy && (
+      {/* DISPATCH AUTOPSY MODAL (FORENSIC OFFICER ONLY) */}
+      {isAuthor && dispatchingAutopsy && (
         <div className="dem-modal-backdrop">
           <div className="dem-modal-card">
             <div className="dem-card-header">
@@ -1285,6 +1572,13 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
                   className="dem-textarea"
                 />
               </FormField>
+
+              {autopsyDispatchError && (
+                <div className="dem-alert-banner dem-alert-error">
+                  <span>✕</span>
+                  <span>{autopsyDispatchError}</span>
+                </div>
+              )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
                 <Button variant="secondary" onClick={() => setDispatchingAutopsy(null)}>
