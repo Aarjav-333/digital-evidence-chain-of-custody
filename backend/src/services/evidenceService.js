@@ -328,9 +328,105 @@ const decryptEvidence = async (evidenceId, userId) => {
     };
 };
 
+const downloadLegacyEvidence = async (evidenceId, userId) => {
+    if (!userId) {
+        const err = new Error("Authenticated user required for legacy download");
+        err.status = 401;
+        err.code = "AUTH_REQUIRED";
+        throw err;
+    }
+
+    const evidence = await evidenceModel.getEvidenceById(evidenceId);
+    if (!evidence) {
+        const err = new Error("Evidence record not found");
+        err.status = 404;
+        err.code = "EVIDENCE_NOT_FOUND";
+        throw err;
+    }
+
+    if (evidence.is_legacy_seed) {
+        const err = new Error("Legacy seed record has no physical file on disk");
+        err.status = 404;
+        err.code = "LEGACY_SEED_NO_FILE";
+        throw err;
+    }
+
+    const hasEncryptionMetadata = Boolean(
+        evidence.encrypted_aes_key &&
+        typeof evidence.encrypted_aes_key === "string" &&
+        evidence.encrypted_aes_key.includes(":") &&
+        evidence.encryption_iv &&
+        evidence.encryption_auth_tag
+    );
+
+    if (hasEncryptionMetadata) {
+        const err = new Error("This record is encrypted with envelope encryption. Use the decrypt endpoint instead.");
+        err.status = 400;
+        err.code = "ENCRYPTED_RECORD";
+        throw err;
+    }
+
+    const resolvedPath = resolveEvidenceFilePath(evidence.file_path);
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+        try {
+            await auditService.createAuditLog(
+                userId,
+                evidence.evidence_id,
+                "LEGACY_DOWNLOAD_FAILED",
+                `Legacy source file missing from storage for ${evidence.evidence_number}`
+            );
+        } catch (_) {}
+        const err = new Error("Legacy source evidence file not found in storage.");
+        err.status = 404;
+        err.code = "FILE_NOT_FOUND";
+        throw err;
+    }
+
+    // Recompute SHA-256 and refuse with 422 plus an audit entry if it does not match file_hash
+    const fileBuffer = fs.readFileSync(resolvedPath);
+    const computedHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    if (computedHash !== evidence.file_hash) {
+        try {
+            await auditService.createAuditLog(
+                userId,
+                evidence.evidence_id,
+                "LEGACY_DOWNLOAD_FAILED",
+                `Tamper detected on legacy evidence: SHA-256 mismatch for ${evidence.evidence_number}`
+            );
+        } catch (_) {}
+        const err = new Error("Legacy evidence integrity verification failed: Stored hash does not match file on disk.");
+        err.status = 422;
+        err.code = "TAMPER_DETECTED";
+        throw err;
+    }
+
+    // Write LEGACY_FILE_DOWNLOAD to audit_logs
+    try {
+        await auditService.createAuditLog(
+            userId,
+            evidence.evidence_id,
+            "LEGACY_FILE_DOWNLOAD",
+            `Legacy unencrypted evidence downloaded and verified: ${evidence.evidence_number}`
+        );
+    } catch (_) {}
+
+    const downloadFileName = cleanEvidenceFileName(evidence.file_name || `evidence-${evidence.evidence_number}`);
+    const mimeType = getMimeTypeByFileName(downloadFileName);
+
+    return {
+        filePath: resolvedPath,
+        downloadFileName,
+        mimeType,
+        evidence_id: evidence.evidence_id,
+        evidence_number: evidence.evidence_number,
+        fileHash: computedHash
+    };
+};
+
 module.exports = {
     createEvidence,
     verifyEvidence,
     decryptEvidence,
+    downloadLegacyEvidence,
     getAllEvidence
 };

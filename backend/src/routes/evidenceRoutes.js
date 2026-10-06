@@ -7,6 +7,7 @@ const {
     createEvidence,
     verifyEvidence,
     decryptEvidence,
+    downloadLegacyEvidence,
     getAllEvidence
 } = require("../controllers/evidenceController");
 
@@ -36,6 +37,14 @@ router.get(
     authenticate,
     authorizeRoles(1, 4),
     decryptEvidence
+);
+
+// Legacy download for unencrypted records: System Administrator (1) & Forensic Analyst (4)
+router.get(
+    "/evidence/:evidenceId/legacy-download",
+    authenticate,
+    authorizeRoles(1, 4),
+    downloadLegacyEvidence
 );
 
 // View evidence inventory: All authenticated roles

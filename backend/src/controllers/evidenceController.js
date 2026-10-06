@@ -125,6 +125,40 @@ const decryptEvidence = async (req, res) => {
     }
 };
 
+const downloadLegacyEvidence = async (req, res) => {
+    try {
+        const evidenceId = req.params.evidenceId;
+        if (!req.user || !req.user.user_id) {
+            return res.status(401).json({ success: false, message: "Authentication required" });
+        }
+        const userId = req.user.user_id;
+
+        const result = await evidenceService.downloadLegacyEvidence(evidenceId, userId);
+
+        const safeFilename = encodeURIComponent(result.downloadFileName);
+        res.setHeader("Content-Disposition", `attachment; filename="${result.downloadFileName}"; filename*=UTF-8''${safeFilename}`);
+        res.setHeader("Content-Type", result.mimeType || "application/octet-stream");
+        res.setHeader("X-Evidence-Legacy", "true");
+
+        const fileStream = fs.createReadStream(result.filePath);
+        fileStream.on("error", (streamErr) => {
+            if (!res.headersSent) {
+                res.status(500).json({ success: false, message: streamErr.message });
+            }
+        });
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error("Download legacy evidence error:", error.message || error);
+        const statusCode = error.status || 500;
+        res.status(statusCode).json({
+            success: false,
+            error: error.code || "DOWNLOAD_ERROR",
+            message: error.message || "Failed to download legacy evidence."
+        });
+    }
+};
+
 const getAllEvidence = async (req, res) => {
     try {
         const result = await evidenceService.getAllEvidence();
@@ -139,5 +173,6 @@ module.exports = {
     createEvidence,
     verifyEvidence,
     decryptEvidence,
+    downloadLegacyEvidence,
     getAllEvidence
 };

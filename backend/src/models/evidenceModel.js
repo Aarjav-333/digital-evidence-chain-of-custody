@@ -68,7 +68,8 @@ const getEvidenceById = async (evidenceId) => {
             file_hash,
             encrypted_aes_key,
             encryption_iv,
-            encryption_auth_tag
+            encryption_auth_tag,
+            is_legacy_seed
         FROM evidence
         WHERE evidence_id = $1;
     `;
@@ -92,7 +93,16 @@ const getAllEvidence = async () => {
             e.file_name,
             e.file_hash,
             e.uploaded_by,
-            e.uploaded_at
+            e.uploaded_at,
+            e.is_legacy_seed,
+            CASE 
+                WHEN e.encrypted_aes_key IS NOT NULL 
+                     AND e.encrypted_aes_key LIKE '%:%' 
+                     AND e.encryption_iv IS NOT NULL 
+                     AND e.encryption_auth_tag IS NOT NULL 
+                THEN true 
+                ELSE false 
+            END AS is_encrypted
         FROM evidence e
         LEFT JOIN cases c
             ON e.case_id = c.case_id
