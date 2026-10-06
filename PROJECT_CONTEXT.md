@@ -239,6 +239,7 @@ npm run dev
 | **Evidence Vault** | **Done** | `backend/src/routes/evidenceRoutes.js`<br>`frontend/src/AppRoot.jsx`<br>`frontend/src/components/common/` | Filter by case, card layout with 2-column metadata, immediate hash verification and decryption triggers. |
 | **Verify Integrity** | **Done** | `backend/src/routes/evidenceRoutes.js`<br>`backend/src/services/evidenceService.js`<br>`backend/src/models/auditModel.js` | On-demand decryption to buffer, recalculation of SHA-256, comparison against stored digest, audit log recording. |
 | **Decrypt Evidence** | **Done** | `backend/src/routes/evidenceRoutes.js`<br>`backend/src/services/evidenceService.js`<br>`backend/src/controllers/evidenceController.js`<br>`backend/src/utils/encryption.js`<br>`backend/src/utils/mimeHelper.js` | Restricted to Roles 1 (Admin) & 4 (Analyst). Unwraps per-file key, decrypts stream, verifies GCM auth tag and post-decryption SHA-256 match, strips Multer timestamp prefix, maps MIME type by extension, exposes Content-Disposition via CORS, and streams original bytes back without plaintext remaining on server. |
+| **Legacy Evidence Download** | **Done** | `backend/src/routes/evidenceRoutes.js`<br>`backend/src/services/evidenceService.js`<br>`backend/src/controllers/evidenceController.js`<br>`backend/src/utils/mimeHelper.js`<br>`frontend/src/AppRoot.jsx`<br>`frontend/src/components/ForensicSuite.jsx` | Authenticated download for legacy unencrypted exhibits. Restricted to Roles 1 (Admin) & 4 (Analyst). Verifies physical disk presence, recomputes SHA-256 before serving (422 on mismatch), strips timestamp prefix, streams MIME payload with Content-Disposition, and writes `LEGACY_FILE_DOWNLOAD` audit log. Catalog seed exhibits (1–3) return 404 without disk search. |
 | **Chain of Custody** | **Done** | `backend/src/routes/custodyRoutes.js`<br>`backend/src/controllers/custodyController.js`<br>`backend/src/services/custodyService.js`<br>`frontend/src/AppRoot.jsx` | Append-only custody logs, evidence transfers from user to user with mandatory action & remarks, historical timeline view. |
 | **Forensic Audit Logs** | **Done** | `backend/src/routes/auditRoutes.js`<br>`backend/src/controllers/auditController.js`<br>`backend/src/services/auditService.js`<br>`frontend/src/AppRoot.jsx` | Logs every action (`LOGIN`, `UPLOAD`, `VERIFY`, `DECRYPT`, `TRANSFER`). Searchable, filterable by action, card layout. |
 | **Autonomous Integrity Scanner** | **Done** | `backend/src/cron/integrityScheduler.js`<br>`backend/src/services/alertService.js`<br>`backend/src/models/alertModel.js` | Native timer daemon running every 60s. Scans all physical encrypted files, flags missing files or hash corruptions, creates active alerts. Recognizes catalog-only seed exhibits (`EV-2026-001` to `003`) via `is_legacy_seed: true` database flag as `LEGACY_SEED` to prevent spurious alerts without relying on description text matching. |
@@ -249,8 +250,19 @@ npm run dev
 | **Deterministic PDF Dossier** | **Done** | `backend/src/routes/reportRoutes.js`<br>`backend/src/services/forensicPdfService.js`<br>`frontend/src/components/ForensicSuite.jsx` | Generates official PDF reports containing case metadata, evidence digests, custody trails, and audit records via PDFKit. Accessible to Roles 1, 2, 3, and 4. |
 | **UI Design System Redesign** | **Done** | `frontend/src/styles/theme.css`<br>`frontend/src/styles/layout.css`<br>`frontend/src/components/common/` | All 7 primary pages redesigned to dark theme card layouts with standard vertical labels and purple accents. |
 | **Alert Center UI Unification** | **Partial** | `frontend/src/components/AlertCenter.jsx` | Fully functional, but still relies on table layouts rather than the new `Card`, `Badge`, and `MetaItem` components. |
-| **Automated Unit & E2E Testing** | **Partial** | `backend/package.json`<br>`frontend/package.json`<br>`backend/src/utils/verifyReportRoles.js` | Verification suites for RBAC and monitor hardening active; no automated CI runner configured (Jest/Mocha/Vitest). |
+| **Automated Unit & E2E Testing** | **Partial** | `backend/package.json`<br>`frontend/package.json`<br>`backend/src/utils/verifyReportRoles.js`<br>`backend/src/utils/verifyEvidenceRoles.js` | Verification suites for RBAC (reports & evidence) and monitor hardening active; no automated CI runner configured (Jest/Mocha/Vitest). |
 | **Live SMTP Production Testing** | **Verified (Demo)** | `backend/src/services/emailService.js`<br>`backend/src/utils/demoTamperAlert.js` | Verified end-to-end via Ethereal sandbox with live browser preview URLs; production delivery requires populated SMTP_PASS in `.env`. |
+
+### Evidence Decryption & Legacy Download Permission Matrix
+
+| Operation / Capability | Route / Surface | Admin (`1`) | Police (`2`) | Case Mgr (`3`) | Forensic Analyst (`4`) | Security & UI Behavior |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **List Evidence Items** | `GET /api/evidence` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | All authenticated roles can browse evidence catalog. |
+| **Verify Integrity Hash** | `GET /api/evidence/:id/verify` | Allowed (200) | Allowed (200) | Allowed (200) | Allowed (200) | All authenticated roles can trigger on-demand hash verification. |
+| **Decrypt Encrypted Evidence** | `GET /api/evidence/:id/decrypt` | Allowed (200) | Denied (403) | Denied (403) | Allowed (200) | Button disabled for Roles 2 & 3 with informative tooltip. GCM authenticated + SHA-256 pre-stream verified. |
+| **Download Legacy File** | `GET /api/evidence/:id/legacy-download` | Allowed (200) | Denied (403) | Denied (403) | Allowed (200) | Button visible only for Roles 1 & 4 on unencrypted files with disk payload. SHA-256 verified; 422 on mismatch. |
+| **Download Legacy Seed Record** | `GET /api/evidence/:id/legacy-download` | Not Found (404) | Denied (403) | Denied (403) | Not Found (404) | Seed records 1–3 return 404 (`LEGACY_SEED_NO_FILE`); UI button disabled with "No encrypted data" tooltip. |
+| **Autopsy Evidence Inspection** | UI Autopsy Quick Inspection | Hidden | Hidden | Hidden | Full Action | In Digital Autopsy Suite, displays selected evidence SHA-256 with Decrypt & Download / Legacy Download button. |
 
 ### Forensic Laboratory & Reports Permission Matrix
 
@@ -284,7 +296,8 @@ npm run dev
 | `POST` | `/api/evidence` | Ingest and encrypt new digital evidence | Admin (1), Police (2), Case Manager (3) |
 | `GET` | `/api/evidence` | List all evidence items | All Authenticated |
 | `GET` | `/api/evidence/:evidenceId/verify` | Recalculate & verify SHA-256 hash | All Authenticated |
-| `GET` | `/api/evidence/:evidenceId/decrypt` | Decrypt and download evidence file | Admin (1), Forensic Analyst (4) |
+| `GET` | `/api/evidence/:evidenceId/decrypt` | Decrypt and download encrypted evidence file | Admin (1), Forensic Analyst (4) |
+| `GET` | `/api/evidence/:evidenceId/legacy-download` | Download and verify unencrypted legacy evidence | Admin (1), Forensic Analyst (4) |
 | `POST` | `/api/custody` | Record a custody transfer | All Authenticated |
 | `GET` | `/api/custody/:evidenceId` | Fetch custody history for an evidence item | All Authenticated |
 | `GET` | `/api/audit-logs` | Fetch system-wide forensic audit logs | All Authenticated |
@@ -463,6 +476,27 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 ## 9. Changelog
 
 - **2026-10-06**:
+  - **Evidence Decryption & Legacy Download RBAC Enforcement & Forensic Analyst Workflow Restoration**:
+    - Separated `canDecryptEvidence` (Roles 1 & 4) from `canAuthorReports` (Role 4 only) in `frontend/src/utils/permissionHelper.js`, ensuring role permissions are decoupled.
+    - Updated `frontend/src/AppRoot.jsx` lifecycle hooks to unconditionally invoke `fetchCases()` on authentication and route transitions, eliminating blank case selection dropdowns for Forensic Analyst on login.
+    - Restored `EvidenceCard.jsx` state management and role controls:
+      - Disabled decrypt action with `"No encrypted data for this record"` tooltip for legacy seed records (`is_legacy_seed: true` or missing encryption keys).
+      - Disabled decrypt action with `"Decryption restricted to System Administrator and Forensic Analyst"` tooltip for Police Officers (Role 2) and Case Managers (Role 3).
+      - Rendered distinct "Download (Legacy)" action for unencrypted files with physical disk payloads for Roles 1 & 4.
+      - Restored `isDecrypting` loading indicator preventing concurrent double-clicks.
+    - Implemented secure authenticated legacy evidence download endpoint (`GET /api/evidence/:evidenceId/legacy-download`) in backend (`routes/evidenceRoutes.js`, `controllers/evidenceController.js`, `services/evidenceService.js`):
+      - Strictly gated via `authorizeRoles(1, 4)`.
+      - Recomputes full SHA-256 binary digest from storage and aborts with HTTP 422 `TAMPER_DETECTED` and audit log if file does not match database `file_hash`.
+      - Returns clean HTTP 404 `LEGACY_SEED_NO_FILE` for catalog-only seed records (1–3).
+      - Rejects envelope-encrypted files with HTTP 400 directing callers to the decryption endpoint.
+      - Dynamically resolves MIME types, strips Multer timestamp prefixes, exposes `Content-Disposition`, and logs immutable `LEGACY_FILE_DOWNLOAD` audit entries.
+    - Added "Evidence Quick Inspection" card in Digital Autopsy Suite (`frontend/src/components/ForensicSuite.jsx`):
+      - Displays selected evidence asset type, registered file, and SHA-256 digest with inline "Decrypt and Download" or "Download (Legacy)" triggers for Role 4.
+    - Built and executed comprehensive RBAC verification script (`backend/src/utils/verifyEvidenceRoles.js`) testing Roles 1–4:
+      - Confirmed 200 and identical SHA-256 matches for Roles 1 & 4 on decrypt and legacy download.
+      - Confirmed 403 on decrypt and legacy download for Roles 2 & 3.
+      - Confirmed 404 on legacy seed download for Roles 1 & 4, and 403 for Roles 2 & 3.
+      - Confirmed `DECRYPTED` and `LEGACY_FILE_DOWNLOAD` audit records.
   - **Forensic Report & Digital Autopsy RBAC Restriction**:
     - Restricted report and digital autopsy authoring/dispatch write operations exclusively to Forensic Officer (`role_id: 4`, DB role name `Forensic Analyst`), covering both `POL2026003` and `FOR2026001`.
     - Hardened backend routes (`backend/src/routes/reportRoutes.js`) with `authorizeRoles(4)` on `POST /api/reports/forensic`, `POST /api/reports/forensic/:id/dispatch`, `POST /api/reports/autopsy`, and `POST /api/reports/autopsy/:id/dispatch`.
