@@ -73,7 +73,98 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
   const [autopsyDispatchLoading, setAutopsyDispatchLoading] = useState(false);
   const [autopsyDispatchError, setAutopsyDispatchError] = useState("");
 
+  // Evidence asset inspection state for digital autopsy
+  const [inspectingEvidenceId, setInspectingEvidenceId] = useState(null);
+  const [inspectionNotice, setInspectionNotice] = useState(null);
+
   const token = localStorage.getItem("token");
+
+  useEffect(() => {
+    if (!pdfCaseId && cases.length > 0) {
+      setPdfCaseId(cases[0].case_id);
+    }
+    if (cases.length > 0) {
+      if (!reportForm.case_id) {
+        setReportForm((prev) => ({ ...prev, case_id: prev.case_id || cases[0].case_id }));
+      }
+      if (!autopsyForm.case_id) {
+        setAutopsyForm((prev) => ({ ...prev, case_id: prev.case_id || cases[0].case_id }));
+      }
+    }
+  }, [cases, pdfCaseId]);
+
+  const handleInspectEvidenceDownload = async (ev) => {
+    if (!ev || inspectingEvidenceId) return;
+    setInspectingEvidenceId(ev.evidence_id);
+    setInspectionNotice(null);
+    try {
+      const activeToken = localStorage.getItem("token") || token;
+      if (!activeToken) {
+        setInspectionNotice({ type: "error", message: "Authentication required to download evidence." });
+        return;
+      }
+      const isEncrypted = ev.is_encrypted !== undefined
+        ? ev.is_encrypted
+        : Boolean(ev.encrypted_aes_key && ev.encrypted_aes_key.includes(":"));
+      const isLegacySeed = Boolean(ev.is_legacy_seed || (ev.evidence_id <= 3 && ev.encrypted_aes_key === "temporary_key"));
+
+      if (isLegacySeed) {
+        setInspectionNotice({ type: "error", message: "No encrypted data or physical file for this legacy seed record." });
+        return;
+      }
+
+      const endpoint = isEncrypted
+        ? `http://localhost:3000/api/evidence/${ev.evidence_id}/decrypt`
+        : `http://localhost:3000/api/evidence/${ev.evidence_id}/legacy-download`;
+
+      const res = await fetch(endpoint, {
+        headers: { Authorization: "Bearer " + activeToken }
+      });
+
+      if (!res.ok) {
+        let errMsg = "Failed to download evidence asset";
+        try {
+          const errJson = await res.json();
+          if (errJson.message) errMsg = errJson.message;
+        } catch (_) {}
+        throw new Error(errMsg);
+      }
+
+      let filename = `evidence-${ev.evidence_id}`;
+      const disposition = res.headers.get("Content-Disposition");
+      if (disposition) {
+        const utf8Matches = disposition.match(/filename\*=UTF-8''([^;\n]+)/i);
+        if (utf8Matches && utf8Matches[1]) {
+          try { filename = decodeURIComponent(utf8Matches[1].trim()); } catch (_) { filename = utf8Matches[1].trim(); }
+        } else {
+          const standardMatches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+          if (standardMatches && standardMatches[1]) {
+            filename = standardMatches[1].replace(/['"]/g, "").trim();
+          }
+        }
+      }
+
+      const blob = await res.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+
+      setInspectionNotice({
+        type: "success",
+        message: `${isEncrypted ? "Decrypted" : "Verified legacy"} asset downloaded: ${filename}`
+      });
+    } catch (err) {
+      console.error("Evidence inspection download error:", err);
+      setInspectionNotice({ type: "error", message: err.message });
+    } finally {
+      setInspectingEvidenceId(null);
+    }
+  };
 
   const fetchUsers = async () => {
     if (!token) return;
@@ -1074,6 +1165,81 @@ export default function ForensicSuite({ user, evidence = [], cases = [], onRefre
                     </select>
                   </FormField>
                 </div>
+
+                {/* EVIDENCE QUICK INSPECTION CARD (ROLE 4 ONLY) */}
+                {isAuthor && autopsyForm.evidence_id && (() => {
+                  const selectedEv = evidence.find((ev) => String(ev.evidence_id) === String(autopsyForm.evidence_id));
+                  if (!selectedEv) return null;
+                  const isEnc = selectedEv.is_encrypted !== undefined
+                    ? selectedEv.is_encrypted
+                    : Boolean(selectedEv.encrypted_aes_key && selectedEv.encrypted_aes_key.includes(":"));
+                  const isSeed = Boolean(selectedEv.is_legacy_seed || (selectedEv.evidence_id <= 3 && selectedEv.encrypted_aes_key === "temporary_key"));
+
+                  return (
+                    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: "16px", marginTop: "-6px", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "10px" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em", fontWeight: 600 }}>
+                            Evidence Quick Inspection
+                          </div>
+                          <h4 style={{ margin: "2px 0 0 0", fontSize: "15px", color: "var(--text-primary)" }}>
+                            {selectedEv.evidence_number} — {selectedEv.evidence_name}
+                          </h4>
+                        </div>
+                        <Badge variant={isEnc ? "purple" : "warning"}>
+                          {isEnc ? "AES-256-GCM Encrypted" : "Legacy Unencrypted"}
+                        </Badge>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", fontSize: "12px", marginBottom: "14px" }}>
+                        <div>
+                          <span style={{ color: "var(--text-muted)", display: "block", textTransform: "uppercase", fontSize: "10px" }}>Asset Type</span>
+                          <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>{selectedEv.evidence_type || "Digital Media"}</span>
+                        </div>
+                        <div>
+                          <span style={{ color: "var(--text-muted)", display: "block", textTransform: "uppercase", fontSize: "10px" }}>Registered File</span>
+                          <span style={{ fontWeight: 500, color: "var(--text-secondary)", wordBreak: "break-all" }}>{selectedEv.file_name || "N/A"}</span>
+                        </div>
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <span style={{ color: "var(--text-muted)", display: "block", textTransform: "uppercase", fontSize: "10px" }}>Registered SHA-256 Digest</span>
+                          <code style={{ fontSize: "11px", color: "var(--accent)", background: "var(--bg-input)", padding: "4px 8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", display: "inline-block", marginTop: "2px", wordBreak: "break-all" }}>
+                            {selectedEv.file_hash}
+                          </code>
+                        </div>
+                      </div>
+
+                      {inspectionNotice && (
+                        <div className={`dem-alert-banner dem-alert-${inspectionNotice.type}`} style={{ marginBottom: "12px", fontSize: "12px", padding: "8px 12px" }}>
+                          <span>{inspectionNotice.type === "success" ? "✓" : "⚠"}</span>
+                          <span>{inspectionNotice.message}</span>
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                        {isSeed ? (
+                          <Button variant="outline" size="sm" disabled title="No encrypted data for this record">
+                            No Encrypted Data
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={isEnc ? "🔓" : "📥"}
+                            loading={inspectingEvidenceId === selectedEv.evidence_id}
+                            disabled={inspectingEvidenceId === selectedEv.evidence_id}
+                            onClick={() => handleInspectEvidenceDownload(selectedEv)}
+                          >
+                            {inspectingEvidenceId === selectedEv.evidence_id
+                              ? "Downloading..."
+                              : isEnc
+                              ? "Decrypt and Download"
+                              : "Download (Legacy)"}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="dem-form-grid-2">
                   <FormField label="Subject Device / Manufacturer" id="autopsy_subject" required>

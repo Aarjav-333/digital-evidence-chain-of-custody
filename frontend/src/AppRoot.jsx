@@ -303,18 +303,10 @@ const handleCreateCase = async (e) => {
 useEffect(() => {
   if (loggedIn) {
     fetchEvidence();
+    fetchCases();
 
     if (currentPage === "audit") {
       fetchAuditLogs();
-    }
-
-    if (
-      currentPage === "upload" ||
-      currentPage === "cases" ||
-      currentPage === "dashboard" ||
-      currentPage === "evidence"
-    ) {
-      fetchCases();
     }
   }
 }, [loggedIn, currentPage]);
@@ -454,6 +446,88 @@ useEffect(() => {
       setVaultNotice({
         type: "error",
         message: "Failed to decrypt and download evidence: " + error.message
+      });
+    } finally {
+      setDecryptingId(null);
+    }
+  };
+
+  const handleLegacyDownload = async (evidenceId) => {
+    if (decryptingId) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setVaultNotice({
+          type: "error",
+          message: "You must be authenticated with valid role credentials to download evidence."
+        });
+        return;
+      }
+
+      setDecryptingId(evidenceId);
+      setVaultNotice(null);
+
+      const response = await fetch(
+        `http://localhost:3000/api/evidence/${evidenceId}/legacy-download`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        let errMessage = "Failed to download legacy evidence";
+        try {
+          const errData = await response.json();
+          if (errData && errData.message) errMessage = errData.message;
+        } catch (_) {}
+        setVaultNotice({
+          type: "error",
+          message: errMessage
+        });
+        return;
+      }
+
+      let filename = `evidence-${evidenceId}-legacy`;
+      const disposition = response.headers.get("Content-Disposition");
+      if (disposition) {
+        const utf8Matches = disposition.match(/filename\*=UTF-8''([^;\n]+)/i);
+        if (utf8Matches && utf8Matches[1]) {
+          try {
+            filename = decodeURIComponent(utf8Matches[1].trim());
+          } catch (_) {
+            filename = utf8Matches[1].trim();
+          }
+        } else {
+          const standardMatches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+          if (standardMatches && standardMatches[1]) {
+            filename = standardMatches[1].replace(/['"]/g, "").trim();
+          }
+        }
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = objectUrl;
+      downloadLink.download = filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      window.URL.revokeObjectURL(objectUrl);
+
+      setVaultNotice({
+        type: "success",
+        message: `Legacy evidence verified and downloaded: ${filename}.`
+      });
+    } catch (error) {
+      console.error("Legacy download error:", error);
+      setVaultNotice({
+        type: "error",
+        message: "Failed to download legacy evidence: " + error.message
       });
     } finally {
       setDecryptingId(null);
@@ -1225,6 +1299,8 @@ const fetchAuditLogs = async () => {
                 isDecrypting={decryptingId === item.evidence_id}
                 onVerify={handleVerify}
                 onDecrypt={handleDecrypt}
+                onLegacyDownload={handleLegacyDownload}
+                user={user}
               />
             ))}
           </div>

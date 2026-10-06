@@ -3,13 +3,17 @@ import Card from "./Card";
 import Badge from "./Badge";
 import Button from "./Button";
 import MetaItem from "./MetaItem";
+import { canDecryptEvidence } from "../../utils/permissionHelper";
 
 export default function EvidenceCard({
   item,
   verification,
-  isVerifying,
+  isVerifying = false,
+  isDecrypting = false,
   onVerify,
-  onDecrypt
+  onDecrypt,
+  onLegacyDownload,
+  user
 }) {
   const getTypeVariant = (type) => {
     const t = (type || "").toLowerCase();
@@ -20,14 +24,32 @@ export default function EvidenceCard({
     return "default";
   };
 
+  const userCanDecrypt = canDecryptEvidence(user);
+  const isLegacySeed = Boolean(item.is_legacy_seed || (item.evidence_id <= 3 && item.encrypted_aes_key === "temporary_key"));
+  const isEncrypted = item.is_encrypted !== undefined
+    ? Boolean(item.is_encrypted)
+    : Boolean(item.encrypted_aes_key && typeof item.encrypted_aes_key === "string" && item.encrypted_aes_key.includes(":"));
+  const isLegacyUnencrypted = !isEncrypted && !isLegacySeed;
+
   return (
     <Card className="dem-evidence-card">
       {/* (a) Header Row: Evidence ID badge on left, type badge on right */}
       <div className="dem-evidence-top-row">
         <span className="dem-evidence-id-badge">{item.evidence_number}</span>
-        <Badge variant={getTypeVariant(item.evidence_type)}>
-          {item.evidence_type || "Document"}
-        </Badge>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {isEncrypted ? (
+            <Badge variant="purple" size="sm" title="Cryptographically sealed with AES-256-GCM">
+              Encrypted
+            </Badge>
+          ) : (
+            <Badge variant="warning" size="sm" title="Uploaded prior to cryptographic envelope encryption">
+              Legacy
+            </Badge>
+          )}
+          <Badge variant={getTypeVariant(item.evidence_type)}>
+            {item.evidence_type || "Document"}
+          </Badge>
+        </div>
       </div>
 
       {/* (b) Title: 18px / 600, clamped to 2 lines */}
@@ -117,18 +139,53 @@ export default function EvidenceCard({
           variant="outline"
           icon="🛡️"
           loading={isVerifying}
+          disabled={isVerifying || isDecrypting}
           onClick={() => onVerify(item.evidence_id)}
         >
           {isVerifying ? "Verifying..." : "Verify Integrity"}
         </Button>
 
-        <Button
-          variant="primary"
-          icon="🔒"
-          onClick={() => onDecrypt(item.evidence_id)}
-        >
-          Decrypt Evidence
-        </Button>
+        {!userCanDecrypt ? (
+          <Button
+            variant="primary"
+            icon="🔒"
+            disabled={true}
+            title="Decryption restricted to System Administrator and Forensic Analyst"
+          >
+            Decrypt Evidence
+          </Button>
+        ) : isLegacySeed ? (
+          <Button
+            variant="primary"
+            icon="🔒"
+            disabled={true}
+            title="No encrypted data for this record"
+          >
+            Decrypt Evidence
+          </Button>
+        ) : isLegacyUnencrypted ? (
+          <Button
+            variant="primary"
+            icon="📥"
+            loading={isDecrypting}
+            disabled={isDecrypting || isVerifying}
+            onClick={() => onLegacyDownload ? onLegacyDownload(item.evidence_id) : onDecrypt(item.evidence_id)}
+            title="Download and verify unencrypted legacy evidence"
+          >
+            {isDecrypting ? "Downloading..." : "Download (Legacy)"}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            icon="🔒"
+            loading={isDecrypting}
+            disabled={isDecrypting || isVerifying}
+            onClick={() => onDecrypt(item.evidence_id)}
+            title="Decrypt AES-256-GCM encrypted evidence"
+          >
+            {isDecrypting ? "Processing..." : "Decrypt Evidence"}
+          </Button>
+        )}
       </div>
     </Card>
   );
