@@ -30,7 +30,7 @@ const getAlertStats = async (req, res) => {
 const runIntegrityCheck = async (req, res) => {
     try {
         const userId = req.user ? req.user.user_id : null;
-        const scanData = await alertService.scanAllEvidenceIntegrity(userId);
+        const scanData = await alertService.scanAllEvidenceIntegrity(userId, true);
 
         if (scanData.already_running) {
             return res.status(409).json({

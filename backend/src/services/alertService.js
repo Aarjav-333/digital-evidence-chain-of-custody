@@ -5,10 +5,15 @@ const pool = require("../config/db");
 const alertModel = require("../models/alertModel");
 const auditService = require("./auditService");
 const emailService = require("./emailService");
+const manifestService = require("./manifestService");
 const { decryptAESKey } = require("../utils/encryption");
 
 // Global mutex to prevent concurrent integrity scans
 let isScanRunning = false;
+
+// In-memory cache for lightweight file verification (size and mtime)
+const fileStatCache = new Map();
+let lastFullScanTimestamp = 0;
 
 const getIsScanRunning = () => isScanRunning;
 
@@ -395,11 +400,125 @@ const retryUnsentAlertEmails = async (auditUserId = null, excludeAlertIds = []) 
     }
 };
 
+const cleanEvidenceFileName = (rawFileName) => {
+    if (!rawFileName) return "evidence-file";
+    const base = path.basename(rawFileName);
+    const cleaned = base.replace(/^\d+-/, "");
+    return cleaned || base;
+};
+
+const getFullScanIntervalMs = () => {
+    const mins = parseFloat(process.env.INTEGRITY_FULL_SCAN_MINUTES);
+    if (!isNaN(mins) && mins > 0) {
+        return Math.round(mins * 60 * 1000);
+    }
+    return 60 * 60 * 1000; // default 60 minutes
+};
+
 /**
- * Runs a complete cryptographic scan over all evidence exhibits.
- * Protected by scanRunning mutex guard so concurrent executions never overlap.
+ * Scans storage folders for physical files that have no corresponding database record.
+ * Raises CRITICAL alert of type UNREGISTERED_FILE for stray files.
  */
-const scanAllEvidenceIntegrity = async (scanUserId = null) => {
+const scanUnregisteredFiles = async (adminId) => {
+    const newlyCreatedAlerts = [];
+    const backendRoot = path.resolve(__dirname, "../../");
+    const candidateDirs = [
+        path.resolve(backendRoot, "uploads"),
+        path.resolve(backendRoot, "uploads/encrypted"),
+        path.resolve(process.cwd(), "uploads"),
+        path.resolve(process.cwd(), "uploads/encrypted")
+    ];
+
+    const uniqueDirs = Array.from(new Set(candidateDirs.map(d => path.normalize(d)))).filter(d => fs.existsSync(d));
+
+    const res = await pool.query("SELECT file_path, file_name FROM evidence;");
+    const registeredNames = new Set();
+    for (const r of res.rows) {
+        if (r.file_name) {
+            registeredNames.add(path.basename(r.file_name).toLowerCase());
+            registeredNames.add(cleanEvidenceFileName(r.file_name).toLowerCase());
+        }
+        if (r.file_path) {
+            registeredNames.add(path.basename(r.file_path).toLowerCase());
+            registeredNames.add(cleanEvidenceFileName(r.file_path).toLowerCase());
+        }
+    }
+
+    const ignoredNames = new Set([
+        ".gitkeep", ".gitignore", "thumbs.db", ".ds_store"
+    ]);
+
+    const scannedPaths = new Set();
+
+    for (const dir of uniqueDirs) {
+        let entries = [];
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (_) {
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isFile()) continue;
+            const fileName = entry.name;
+            const lowerName = fileName.toLowerCase();
+
+            if (ignoredNames.has(lowerName) || lowerName.startsWith(".") || lowerName.endsWith(".zip")) {
+                continue;
+            }
+
+            const fullPath = path.join(dir, fileName);
+            const normalizedFullPath = path.normalize(fullPath);
+            if (scannedPaths.has(normalizedFullPath)) continue;
+            scannedPaths.add(normalizedFullPath);
+
+            const cleanedName = cleanEvidenceFileName(fileName).toLowerCase();
+
+            const isRegistered = registeredNames.has(lowerName) || registeredNames.has(cleanedName);
+            if (!isRegistered) {
+                let fileHash = null;
+                try {
+                    fileHash = await streamComputeFileSha256(fullPath);
+                } catch (_) {}
+
+                const alertRes = await alertModel.createAlert({
+                    evidence_id: null,
+                    case_id: null,
+                    alert_type: "UNREGISTERED_FILE",
+                    severity: "CRITICAL",
+                    stored_hash: null,
+                    detected_hash: fileHash,
+                    file_path: fullPath,
+                    message: `Unregistered file detected on storage volume with no corresponding evidence record: ${fileName}`,
+                    email_status: "PENDING",
+                    email_attempts: 0
+                });
+
+                if (alertRes && alertRes.is_new) {
+                    await auditService.createAuditLog(
+                        adminId,
+                        null,
+                        "TAMPER_DETECTED",
+                        `[SYSTEM] CRITICAL: Unregistered file detected on storage volume: ${fileName}`
+                    );
+                    newlyCreatedAlerts.push(alertRes);
+                }
+            }
+        }
+    }
+
+    return newlyCreatedAlerts;
+};
+
+/**
+ * Runs integrity verification across the entire vault.
+ * Supports configurable full rehashes vs lightweight checks (file size & modified timestamp).
+ * Also verifies audit log hash chain, signed manifest consistency, and unregistered storage files.
+ *
+ * @param {number|null} scanUserId User requesting scan
+ * @param {boolean} forceFull Force complete cryptographic stream rehash of all files
+ */
+const scanAllEvidenceIntegrity = async (scanUserId = null, forceFull = false) => {
     if (isScanRunning) {
         console.warn("[AlertService] Scan requested while previous scan is in progress. Skipping concurrent run.");
         return {
@@ -417,8 +536,142 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
     isScanRunning = true;
 
     try {
-        // Preload admin ID once for the entire scan
         const adminId = scanUserId || (await getSystemAdminId());
+        const newlyCreatedAlerts = [];
+
+        // ---------------------------------------------------------------------
+        // Step A: Audit Log Hash Chain Verification
+        // ---------------------------------------------------------------------
+        try {
+            const chainCheck = await auditService.verifyAuditLogChain();
+            if (!chainCheck.valid) {
+                const chainAlert = await alertModel.createAlert({
+                    evidence_id: null,
+                    case_id: null,
+                    alert_type: "AUDIT_CHAIN_BROKEN",
+                    severity: "CRITICAL",
+                    stored_hash: chainCheck.storedEntryHash || chainCheck.expectedPrevHash || null,
+                    detected_hash: chainCheck.computedEntryHash || chainCheck.actualPrevHash || null,
+                    file_path: "audit_logs",
+                    message: chainCheck.reason || "Audit log cryptographic hash chain linkage broken! Row edited, reordered, or deleted.",
+                    email_status: "PENDING",
+                    email_attempts: 0
+                });
+                if (chainAlert && chainAlert.is_new) {
+                    await auditService.createAuditLog(
+                        adminId,
+                        null,
+                        "TAMPER_DETECTED",
+                        `[SYSTEM] CRITICAL: Audit log hash chain broken: ${chainCheck.reason}`
+                    );
+                    newlyCreatedAlerts.push(chainAlert);
+                }
+            }
+        } catch (chainErr) {
+            console.warn("[AlertService] Audit chain check error:", chainErr.message);
+        }
+
+        // ---------------------------------------------------------------------
+        // Step B: Compare Database with Daily Signed Integrity Manifest
+        // ---------------------------------------------------------------------
+        try {
+            const manifestComparison = await manifestService.compareDatabaseWithManifest();
+            if (!manifestComparison.valid) {
+                if (manifestComparison.manifest_tampered) {
+                    const mAlert = await alertModel.createAlert({
+                        evidence_id: null,
+                        case_id: null,
+                        alert_type: "MANIFEST_TAMPERED",
+                        severity: "CRITICAL",
+                        stored_hash: null,
+                        detected_hash: null,
+                        file_path: "manifest-latest.json",
+                        message: manifestComparison.message || "Signed integrity manifest signature verification failed! HMAC mismatch.",
+                        email_status: "PENDING",
+                        email_attempts: 0
+                    });
+                    if (mAlert && mAlert.is_new) {
+                        await auditService.createAuditLog(
+                            adminId,
+                            null,
+                            "TAMPER_DETECTED",
+                            `[SYSTEM] CRITICAL: Signed manifest HMAC verification failed`
+                        );
+                        newlyCreatedAlerts.push(mAlert);
+                    }
+                }
+
+                // Evidence records deleted from database
+                for (const delRec of manifestComparison.deleted_records || []) {
+                    const delAlert = await alertModel.createAlert({
+                        evidence_id: null,
+                        case_id: null,
+                        alert_type: "EVIDENCE_RECORD_DELETED",
+                        severity: "CRITICAL",
+                        stored_hash: delRec.manifest_hash,
+                        detected_hash: null,
+                        file_path: `database:evidence:${delRec.evidence_id}`,
+                        message: `Evidence record ${delRec.evidence_number} (ID: ${delRec.evidence_id}) previously signed in manifest was deleted from the database!`,
+                        email_status: "PENDING",
+                        email_attempts: 0
+                    });
+                    if (delAlert && delAlert.is_new) {
+                        await auditService.createAuditLog(
+                            adminId,
+                            null,
+                            "TAMPER_DETECTED",
+                            `[SYSTEM] CRITICAL: Evidence record deleted from database: ${delRec.evidence_number} (ID: ${delRec.evidence_id})`
+                        );
+                        newlyCreatedAlerts.push(delAlert);
+                    }
+                }
+
+                // Hash mismatches vs manifest
+                for (const misRec of manifestComparison.mismatches || []) {
+                    const misAlert = await alertModel.createAlert({
+                        evidence_id: misRec.evidence_id,
+                        case_id: null,
+                        alert_type: "MANIFEST_HASH_MISMATCH",
+                        severity: "CRITICAL",
+                        stored_hash: misRec.manifest_hash,
+                        detected_hash: misRec.db_hash,
+                        file_path: "database:evidence",
+                        message: `Evidence ${misRec.evidence_number} stored hash in database (${misRec.db_hash}) does not match signed manifest (${misRec.manifest_hash}).`,
+                        email_status: "PENDING",
+                        email_attempts: 0
+                    });
+                    if (misAlert && misAlert.is_new) {
+                        await auditService.createAuditLog(
+                            adminId,
+                            misRec.evidence_id,
+                            "TAMPER_DETECTED",
+                            `[SYSTEM] CRITICAL: Evidence ${misRec.evidence_number} database hash differs from signed manifest`
+                        );
+                        newlyCreatedAlerts.push(misAlert);
+                    }
+                }
+            }
+        } catch (manErr) {
+            console.warn("[AlertService] Manifest check error:", manErr.message);
+        }
+
+        // ---------------------------------------------------------------------
+        // Step C: Scan Storage for Unregistered Files
+        // ---------------------------------------------------------------------
+        try {
+            const unregisteredAlerts = await scanUnregisteredFiles(adminId);
+            for (const unreg of unregisteredAlerts) {
+                newlyCreatedAlerts.push(unreg);
+            }
+        } catch (unregErr) {
+            console.warn("[AlertService] Unregistered files scan error:", unregErr.message);
+        }
+
+        // ---------------------------------------------------------------------
+        // Step D: Scan Evidence Exhibits (Lightweight vs Full Cryptographic Rehash)
+        // ---------------------------------------------------------------------
+        const fullScanIntervalMs = getFullScanIntervalMs();
+        const isFullScan = forceFull || (Date.now() - lastFullScanTimestamp >= fullScanIntervalMs);
 
         const query = `
             SELECT 
@@ -440,19 +693,75 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
         const result = await pool.query(query);
         const items = result.rows;
         const scanResults = [];
-        const newlyCreatedAlerts = [];
 
         for (const item of items) {
-            const res = await checkEvidenceIntegrity(item, scanUserId, adminId);
-            scanResults.push(res);
+            const isVerifiedLegacySeed = Boolean(
+                item.is_legacy_seed === true ||
+                (Number(item.evidence_id) <= 3 && item.encrypted_aes_key === "temporary_key")
+            );
 
-            if (res.new_alert_created && res.alert) {
-                newlyCreatedAlerts.push({
-                    ...res.alert,
+            if (isVerifiedLegacySeed) {
+                scanResults.push({
+                    status: "LEGACY_SEED",
+                    evidence_id: item.evidence_id,
                     evidence_number: item.evidence_number,
-                    evidence_name: item.evidence_name
+                    is_legacy_seed: true,
+                    new_alert_created: false
+                });
+                continue;
+            }
+
+            const resolvedPath = resolveEvidenceFilePath(item.file_path);
+            if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+                const res = await checkEvidenceIntegrity(item, scanUserId, adminId);
+                scanResults.push(res);
+                if (res.new_alert_created && res.alert) {
+                    newlyCreatedAlerts.push({
+                        ...res.alert,
+                        evidence_number: item.evidence_number,
+                        evidence_name: item.evidence_name
+                    });
+                }
+                continue;
+            }
+
+            // File exists on disk: inspect file size and modified timestamp
+            let stat = null;
+            try {
+                stat = fs.statSync(resolvedPath);
+            } catch (_) {}
+
+            const cached = fileStatCache.get(item.evidence_id);
+            const statChanged = !cached || !stat || cached.size !== stat.size || cached.mtimeMs !== stat.mtimeMs;
+
+            if (isFullScan || statChanged) {
+                const res = await checkEvidenceIntegrity(item, scanUserId, adminId);
+                scanResults.push(res);
+                if (stat) {
+                    fileStatCache.set(item.evidence_id, { size: stat.size, mtimeMs: stat.mtimeMs });
+                }
+                if (res.new_alert_created && res.alert) {
+                    newlyCreatedAlerts.push({
+                        ...res.alert,
+                        evidence_number: item.evidence_number,
+                        evidence_name: item.evidence_name
+                    });
+                }
+            } else {
+                // Lightweight check passed: size and mtime are identical to last verified state
+                scanResults.push({
+                    status: "INTACT",
+                    evidence_id: item.evidence_id,
+                    evidence_number: item.evidence_number,
+                    hash: item.file_hash,
+                    lightweight: true,
+                    new_alert_created: false
                 });
             }
+        }
+
+        if (isFullScan) {
+            lastFullScanTimestamp = Date.now();
         }
 
         // Handle key unwrap failures as a single system-level warning (no per-record alerts)
@@ -567,7 +876,6 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
         const scanned = scanResults.length;
         const intact = scanResults.filter(r => r.status === "INTACT").length;
         const legacy_seed = scanResults.filter(r => r.status === "LEGACY_SEED").length;
-        // Exclude INTACT, LEGACY_SEED, and KEY_UNWRAP_FAILED from compromised count
         const compromised = scanResults.filter(r => r.status !== "INTACT" && r.status !== "LEGACY_SEED" && r.status !== "KEY_UNWRAP_FAILED").length;
         const new_alerts_dispatched = newlyCreatedAlerts.length;
 
@@ -577,7 +885,8 @@ const scanAllEvidenceIntegrity = async (scanUserId = null) => {
             intact,
             legacy_seed,
             compromised,
-            new_alerts_dispatched
+            new_alerts_dispatched,
+            is_full_scan: isFullScan
         };
     } finally {
         isScanRunning = false;
@@ -606,6 +915,7 @@ const resolveAlert = async (alertId, userId, notes) => {
 module.exports = {
     checkEvidenceIntegrity,
     scanAllEvidenceIntegrity,
+    scanUnregisteredFiles,
     retryUnsentAlertEmails,
     resolveAlert,
     getIsScanRunning

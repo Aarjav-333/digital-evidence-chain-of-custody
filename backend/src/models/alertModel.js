@@ -55,6 +55,12 @@ const getAlertStats = async () => {
 };
 
 const createAlert = async (alertData) => {
+    // Proactively check for existing active alert for duplicate suppression
+    const existing = await findActiveAlert(alertData.evidence_id, alertData.alert_type, alertData.file_path);
+    if (existing) {
+        return { ...existing, is_new: false, already_exists: true };
+    }
+
     const query = `
         INSERT INTO tamper_alerts
         (
@@ -95,36 +101,89 @@ const createAlert = async (alertData) => {
     } catch (err) {
         // Unique violation (Postgres error 23505): partial unique index idx_active_tamper_alerts_unique
         if (err.code === "23505") {
-            const existing = await findActiveAlert(alertData.evidence_id, alertData.alert_type);
-            return existing ? { ...existing, is_new: false, already_exists: true } : null;
+            const conflictExisting = await findActiveAlert(alertData.evidence_id, alertData.alert_type, alertData.file_path);
+            return conflictExisting ? { ...conflictExisting, is_new: false, already_exists: true } : null;
         }
         throw err;
     }
 };
 
-const findActiveAlert = async (evidenceId, alertType) => {
-    const query = `
-        SELECT 
-            alert_id,
-            evidence_id,
-            case_id,
-            alert_type,
-            severity,
-            stored_hash,
-            detected_hash,
-            file_path,
-            message,
-            status,
-            email_status,
-            email_attempts,
-            email_last_error,
-            email_sent_at,
-            detected_at
-        FROM tamper_alerts 
-        WHERE evidence_id = $1 AND alert_type = $2 AND status = 'ACTIVE'
-        LIMIT 1;
-    `;
-    const result = await pool.query(query, [evidenceId, alertType]);
+const findActiveAlert = async (evidenceId, alertType, filePath = null) => {
+    let query;
+    let params;
+
+    if (evidenceId !== null && evidenceId !== undefined) {
+        query = `
+            SELECT 
+                alert_id,
+                evidence_id,
+                case_id,
+                alert_type,
+                severity,
+                stored_hash,
+                detected_hash,
+                file_path,
+                message,
+                status,
+                email_status,
+                email_attempts,
+                email_last_error,
+                email_sent_at,
+                detected_at
+            FROM tamper_alerts 
+            WHERE evidence_id = $1 AND alert_type = $2 AND status = 'ACTIVE'
+            LIMIT 1;
+        `;
+        params = [evidenceId, alertType];
+    } else if (filePath) {
+        query = `
+            SELECT 
+                alert_id,
+                evidence_id,
+                case_id,
+                alert_type,
+                severity,
+                stored_hash,
+                detected_hash,
+                file_path,
+                message,
+                status,
+                email_status,
+                email_attempts,
+                email_last_error,
+                email_sent_at,
+                detected_at
+            FROM tamper_alerts 
+            WHERE evidence_id IS NULL AND alert_type = $1 AND file_path = $2 AND status = 'ACTIVE'
+            LIMIT 1;
+        `;
+        params = [alertType, filePath];
+    } else {
+        query = `
+            SELECT 
+                alert_id,
+                evidence_id,
+                case_id,
+                alert_type,
+                severity,
+                stored_hash,
+                detected_hash,
+                file_path,
+                message,
+                status,
+                email_status,
+                email_attempts,
+                email_last_error,
+                email_sent_at,
+                detected_at
+            FROM tamper_alerts 
+            WHERE evidence_id IS NULL AND alert_type = $1 AND status = 'ACTIVE'
+            LIMIT 1;
+        `;
+        params = [alertType];
+    }
+
+    const result = await pool.query(query, params);
     return result.rows[0];
 };
 

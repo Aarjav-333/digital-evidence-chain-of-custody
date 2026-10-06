@@ -10,20 +10,29 @@ const getIntervalMs = (defaultMs = 60000) => {
     return defaultMs;
 };
 
+const getFullScanIntervalMs = () => {
+    const mins = parseFloat(process.env.INTEGRITY_FULL_SCAN_MINUTES);
+    if (!isNaN(mins) && mins > 0) {
+        return Math.round(mins * 60 * 1000);
+    }
+    return 60 * 60 * 1000;
+};
+
 const startIntegrityMonitor = (customIntervalMs = null) => {
     if (intervalId) return;
 
     const intervalMs = customIntervalMs || getIntervalMs(60000);
     const intervalSeconds = Math.round(intervalMs / 1000);
-    console.log(`[IntegrityMonitor] Started background automated file integrity monitor (every ${intervalSeconds}s)`);
+    const fullScanMinutes = Math.round(getFullScanIntervalMs() / 60000);
+    console.log(`[IntegrityMonitor] Started background automated file integrity monitor (lightweight: ${intervalSeconds}s, full rehash: ${fullScanMinutes}m)`);
     
     setTimeout(async () => {
         try {
-            const initialSummary = await alertService.scanAllEvidenceIntegrity();
+            const initialSummary = await alertService.scanAllEvidenceIntegrity(null, true);
             if (initialSummary && initialSummary.already_running) {
                 console.log("[IntegrityMonitor] Initial scan skipped: concurrent scan already running.");
             } else {
-                console.log("[IntegrityMonitor] Initial background integrity scan completed.");
+                console.log("[IntegrityMonitor] Initial full cryptographic baseline scan completed.");
             }
         } catch (err) {
             console.error("[IntegrityMonitor] Initial scan error:", err.message);

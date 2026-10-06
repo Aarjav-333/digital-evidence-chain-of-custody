@@ -621,6 +621,76 @@ const sendTestEmail = async (requestedByUserId) => {
 };
 
 /**
+ * Dispatches the daily signed integrity manifest to the system administrator via email.
+ */
+const sendSignedManifestEmail = async (manifestDoc) => {
+    const { transporter, isEthereal } = await getTransporter();
+    if (!transporter) {
+        return {
+            sent: false,
+            configured: false,
+            reason: "SMTP not configured. Manifest email suppressed."
+        };
+    }
+
+    const recipient = await resolveRecipientEmail();
+    const fromAddress = process.env.SMTP_FROM || `"Digital Evidence Vault" <no-reply@police.gov>`;
+    const timestampStr = manifestDoc.generated_at || new Date().toISOString();
+    const jsonStr = JSON.stringify(manifestDoc, null, 2);
+
+    try {
+        const info = await transporter.sendMail({
+            from: fromAddress,
+            to: recipient,
+            subject: `[DIG_EVI] Daily Signed Evidence Integrity Manifest (${manifestDoc.total_records} exhibits)`,
+            text: `Daily Signed Evidence Integrity Manifest generated at ${timestampStr}.\nTotal Exhibits: ${manifestDoc.total_records}\nLatest Audit Chain Hash: ${manifestDoc.latest_audit_hash}\nHMAC Signature: ${manifestDoc.signature?.hmac}`,
+            html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0d14; color: #e2e8f0; padding: 24px;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: #121526; border: 1px solid #232942; border-radius: 8px; padding: 24px;">
+                        <h2 style="color: #8b5cf6; margin-top: 0;">🛡️ Daily Signed Integrity Manifest</h2>
+                        <p style="font-size: 14px; color: #94a3b8;">An automated cryptographic manifest of all evidence exhibits and the immutable audit log chain has been generated and signed with HMAC-SHA256.</p>
+                        <table style="width: 100%; font-size: 13px; border-collapse: collapse; margin: 16px 0;">
+                            <tr><td style="padding: 6px 0; color: #64748b;">Generated At:</td><td style="font-family: monospace; color: #f1f5f9;">${escapeHtml(timestampStr)}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;">Total Exhibits:</td><td style="font-weight: 600; color: #f1f5f9;">${escapeHtml(manifestDoc.total_records)}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;">Audit Chain Head:</td><td style="font-family: monospace; color: #a78bfa; word-break: break-all;">${escapeHtml(manifestDoc.latest_audit_hash)}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;">HMAC Signature:</td><td style="font-family: monospace; color: #38bdf8; word-break: break-all;">${escapeHtml(manifestDoc.signature?.hmac)}</td></tr>
+                        </table>
+                        <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">The complete manifest JSON is attached to this dispatch.</p>
+                    </div>
+                </div>
+            `,
+            attachments: [
+                {
+                    filename: `manifest-${timestampStr.split("T")[0]}.json`,
+                    content: jsonStr,
+                    contentType: "application/json"
+                }
+            ]
+        });
+
+        const previewUrl = isEthereal ? nodemailer.getTestMessageUrl(info) : null;
+        return {
+            sent: true,
+            configured: true,
+            isDemo: isEthereal,
+            recipient: maskEmail(recipient),
+            messageId: info.messageId,
+            previewUrl
+        };
+    } catch (err) {
+        let safeError = err.message || "Failed to dispatch manifest email";
+        if (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) {
+            safeError = safeError.split(process.env.SMTP_PASS.trim()).join("[REDACTED]");
+        }
+        return {
+            sent: false,
+            configured: true,
+            error: safeError
+        };
+    }
+};
+
+/**
  * Helper to verify SMTP credentials and connectivity during manual testing.
  */
 const verifySmtpConnection = async () => {
@@ -662,5 +732,6 @@ module.exports = {
     sendTamperAlertEmail,
     sendTamperAlertDigestEmail,
     sendTestEmail,
+    sendSignedManifestEmail,
     verifySmtpConnection
 };
