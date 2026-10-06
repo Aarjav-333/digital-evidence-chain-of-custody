@@ -80,9 +80,14 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     action VARCHAR(50) NOT NULL,
     details TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    prev_hash VARCHAR(64),
+    entry_hash VARCHAR(64),
     CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL,
     CONSTRAINT fk_audit_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(evidence_id) ON DELETE SET NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entry_hash ON audit_logs(entry_hash);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_prev_hash ON audit_logs(prev_hash);
 
 -- 7. TAMPER ALERTS
 CREATE TABLE IF NOT EXISTS tamper_alerts (
