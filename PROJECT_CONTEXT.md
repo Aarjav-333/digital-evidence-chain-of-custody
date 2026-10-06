@@ -479,6 +479,10 @@ The PostgreSQL database (`database/schema.sql`) consists of 9 normalized tables:
 ## 9. Changelog
 
 - **2026-10-07**:
+  - **Alert Center Tamper Banner Removal**:
+    - Added a single configurable toggle `const SHOW_TAMPER_BANNER = false;` at the top of [`frontend/src/components/AlertCenter.jsx`](file:///c:/Users/vrind/project_mini_mca/dig_evi/frontend/src/components/AlertCenter.jsx) to hide the large red "CRITICAL FILE TAMPERING DETECTED ... Re-Scan Vault" banner without leaving any empty layout gap or container element across desktop (1440px), tablet (1024px), and mobile (390px) viewports.
+    - Preserved all filter chips ("All Alerts", "Active Anomalies", "Critical", "Resolved"), statistics cards, and the "▶ Run Integrity Scan Now" scan trigger.
+    - Zero backend, audit logging, alert resolution, or email notification behavior changed.
   - **Audit Log Cryptographic Hash Chain**:
     - Added `prev_hash VARCHAR(64)` and `entry_hash VARCHAR(64)` columns and indexes to `audit_logs` (`database/migrations/20261007_audit_logs_hash_chain.sql`, `database/schema.sql`).
     - Backfilled entire history across all existing rows with SHA-256 chain without altering existing payload data (`backend/src/utils/migrateAuditHashChain.js`).

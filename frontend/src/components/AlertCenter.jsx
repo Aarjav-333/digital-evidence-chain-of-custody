@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 
+// Toggle to show or hide the top critical file tampering incident banner
+const SHOW_TAMPER_BANNER = false;
+
 export default function AlertCenter({ user, onRefresh }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -328,7 +331,7 @@ export default function AlertCenter({ user, onRefresh }) {
       )}
 
       {/* CRITICAL INCIDENT BANNER */}
-      {stats.critical_active > 0 && (
+      {SHOW_TAMPER_BANNER && stats.critical_active > 0 && (
         <div className="tamper-critical-banner">
           <div className="banner-left">
             <span className="banner-icon">🚨</span>
